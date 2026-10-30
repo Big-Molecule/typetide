@@ -61,6 +61,8 @@ $ErrorActionPreference = "Continue"
 cmd /c "`"$devcmd`" -arch=amd64 -no_logo 2>nul && cd /d `"$win`" && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build" 2>&1 | ForEach-Object { "$_" }
 $ErrorActionPreference = $eap
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
+ctest --test-dir (Join-Path $win "build") --output-on-failure
+if ($LASTEXITCODE -ne 0) { throw "layout tests failed" }
 $exe = Join-Path $win "build\TypeTide.exe"
 if (-not (Test-Path $exe)) { throw "TypeTide.exe not produced" }
 

@@ -53,3 +53,12 @@ target_link_libraries(TypeTide PRIVATE
     winhttp uiautomationcore dwmapi advapi32 shlwapi uxtheme dbghelp
     comdlg32 bcrypt ws2_32
 )
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(SettingsLayoutTest tests/settings-layout.cpp)
+    target_include_directories(SettingsLayoutTest PRIVATE src)
+    target_compile_definitions(SettingsLayoutTest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(SettingsLayoutTest PRIVATE user32)
+    add_test(NAME settings-layout COMMAND SettingsLayoutTest)
+endif()

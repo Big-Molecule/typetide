@@ -17,13 +17,13 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "everettjf"
-            VALUE "FileDescription", "TypeTide — system-wide AI translation & inline rewrite"
-            VALUE "FileVersion", "0.1.20"
+            VALUE "FileDescription", "TypeTide - system-wide AI translation & inline rewrite"
+            VALUE "FileVersion", "0.1.21"
             VALUE "InternalName", "TypeTide"
             VALUE "LegalCopyright", "MIT License"
             VALUE "OriginalFilename", "TypeTide.exe"
             VALUE "ProductName", "TypeTide"
-            VALUE "ProductVersion", "0.1.20"
+            VALUE "ProductVersion", "0.1.21"
         END
     END
     BLOCK "VarFileInfo"

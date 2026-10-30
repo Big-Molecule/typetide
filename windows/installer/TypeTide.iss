@@ -11,7 +11,7 @@
 AppId={{7A2E5B90-3C64-4D8F-9B1A-52E8C0A47F31}
 AppName=TypeTide
 AppVersion={#AppVersion}
-AppPublisher=everettjf
+AppPublisher=Big-Molecule
 AppPublisherURL=https://github.com/Big-Molecule/typetide
 AppSupportURL=https://github.com/Big-Molecule/typetide/issues
 AppUpdatesURL=https://github.com/Big-Molecule/typetide/releases

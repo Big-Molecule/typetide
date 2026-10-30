@@ -20,20 +20,45 @@ TypeTide 把翻译变成一个原地完成的系统动作。它常驻系统托�
 
 不用打开浏览器标签页，也不用在翻译网站之间来回复制粘贴。模型来自你自己的 **OpenAI 兼容** API（`/chat/completions`，流式）——云端或局域网自建网关均可，key 存在 Windows Credential Manager。
 
-<p align="center">
-  <img src="docs/screenshots/rewrite.gif" alt="输入中文，按下改写快捷键，原地改写为英文" width="760" />
-  <br/><sub><i>写 · 用母语输入，按 <kbd>Ctrl+Shift+R</kbd>，原地改写成目标语言。</i></sub>
-</p>
+## 👀 软件展示
+
+以下素材均录自原生 Windows 版。名言笔记本是演示用编辑器，翻译弹窗、浮动图标和设置页均为 TypeTide 的真实界面。演示使用预设名言译文以便重复录制，不代表实际模型响应速度。[录制说明](docs/screenshots/README.md)。
+
+### 读 · 选中即译
 
 <p align="center">
-  <img src="docs/screenshots/translate.gif" alt="选中文字，译文流式显示在弹窗里" width="760" />
-  <br/><sub><i>读 · 选中文字，译文流式显示在弹窗里——可复制或替换。</i></sub>
+  <img src="docs/screenshots/translate.gif" alt="选中莎士比亚名言后，真实 TypeTide 弹窗先显示等待水波纹，再逐渐淡入中文译文" width="960" />
+  <br/><sub><i>选中莎士比亚的“We know what we are, but know not what we may be.” → <kbd>Alt+D</kbd> → 不离开当前编辑器即可阅读译文。</i></sub>
 </p>
 
+### 写 · 原地改写
+
 <p align="center">
-  <img src="docs/screenshots/icon.png" alt="选区旁的浮动翻译图标" width="520" />
-  <br/><sub><i>可选的浮动图标，紧贴你的选区出现。</i></sub>
+  <img src="docs/screenshots/rewrite.gif" alt="在编辑器中输入老子的千里之行，始于足下，再使用 TypeTide 将其原地替换为英文译文" width="960" />
+  <br/><sub><i>输入“千里之行，始于足下。” → <kbd>Ctrl+Shift+R</kbd> → 原地变为“A journey of a thousand miles begins with a single step.”</i></sub>
 </p>
+
+### 浮动图标 · 紧贴选区
+
+<p align="center">
+  <img src="docs/screenshots/icon.png" alt="选中莎士比亚名言 To thine own self be true 后，TypeTide 的紫色浮动翻译图标出现在选区旁" width="655" />
+  <br/><sub><i>习惯用鼠标？开启浮动图标，选中文字后即可点击翻译。</i></sub>
+</p>
+
+### 原生 Windows 设置界面
+
+<p align="center">
+  <img src="docs/screenshots/settings-languages.png" alt="真实 TypeTide Windows 语言设置页：母语为中文、外语为英文，读写均采用自动双向翻译" width="944" />
+  <br/><sub><i>设置母语与外语，为阅读和改写分别选择翻译方向。</i></sub>
+</p>
+
+<details>
+  <summary>查看划词触发方式与改写风格</summary>
+  <p align="center">
+    <img src="docs/screenshots/settings-behavior.png" alt="真实 TypeTide 行为设置页：浮动图标触发、改写前预览，以及独立的阅读与改写风格" width="944" />
+    <br/><sub><i>快捷键、浮动图标、自动翻译按需选择；预览方式与改写风格也可单独配置。</i></sub>
+  </p>
+</details>
 
 ---
 

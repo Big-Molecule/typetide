@@ -20,20 +20,45 @@ TypeTide turns translation into an in-place system action. It lives in the syste
 
 No browser tab and no copy-paste loop. Bring your own **OpenAI-compatible** endpoint (`/chat/completions`, SSE streaming) — a cloud API or a self-hosted gateway, your key stays in Windows Credential Manager.
 
-<p align="center">
-  <img src="docs/screenshots/rewrite.gif" alt="Type Chinese, press the rewrite shortcut, and it is rewritten into English in place" width="760" />
-  <br/><sub><i>Write · type in your language, press <kbd>Ctrl+Shift+R</kbd>, and it's rewritten in place.</i></sub>
-</p>
+## 👀 See it in action
+
+Captured from the native Windows app. The quote notebook is an example editor; the popup, floating icon, and settings are TypeTide's real interface. Translations use preset quotation responses for a repeatable demonstration, not a model-speed benchmark. [Recording notes](docs/screenshots/README.md).
+
+### Read · translate a selection
 
 <p align="center">
-  <img src="docs/screenshots/translate.gif" alt="Select text and the translation streams into a popup" width="760" />
-  <br/><sub><i>Read · select text and the translation streams into a popup — Copy or Replace.</i></sub>
+  <img src="docs/screenshots/translate.gif" alt="Select a quotation from Hamlet and translate it into Chinese in the real TypeTide popup, with a waiting shimmer and streamed text fading in" width="960" />
+  <br/><sub><i>Select Shakespeare's “We know what we are, but know not what we may be.” → <kbd>Alt+D</kbd> → read the translation without leaving the editor.</i></sub>
 </p>
 
+### Write · rewrite in place
+
 <p align="center">
-  <img src="docs/screenshots/icon.png" alt="Floating translate icon next to a selection" width="520" />
-  <br/><sub><i>Optional floating icon appears right next to your selection.</i></sub>
+  <img src="docs/screenshots/rewrite.gif" alt="Enter Laozi's 千里之行，始于足下。 in an editor and use TypeTide to replace it with its English translation" width="960" />
+  <br/><sub><i>Write “千里之行，始于足下。” → <kbd>Ctrl+Shift+R</kbd> → “A journey of a thousand miles begins with a single step.”</i></sub>
 </p>
+
+### A floating icon, right beside your selection
+
+<p align="center">
+  <img src="docs/screenshots/icon.png" alt="TypeTide's purple floating translate icon beside the selected quotation To thine own self be true" width="655" />
+  <br/><sub><i>Prefer the mouse? Enable the optional floating icon and translate from your selection.</i></sub>
+</p>
+
+### Native Windows settings
+
+<p align="center">
+  <img src="docs/screenshots/settings-languages.png" alt="The real TypeTide Windows language settings: Chinese as the native language, English as the foreign language, and automatic bidirectional translation" width="944" />
+  <br/><sub><i>Choose your native and foreign language, with independent directions for reading and rewriting.</i></sub>
+</p>
+
+<details>
+  <summary>Selection triggers and rewriting styles</summary>
+  <p align="center">
+    <img src="docs/screenshots/settings-behavior.png" alt="The real TypeTide behavior settings: floating-icon trigger, optional rewrite preview, and separate read and rewrite styles" width="944" />
+    <br/><sub><i>Use shortcuts, a floating icon, or automatic translation; choose preview behavior and writing styles.</i></sub>
+  </p>
+</details>
 
 ---
 

@@ -52,11 +52,24 @@ std::optional<std::wstring> TranslateFully(const TranslationRequest& req, std::w
 /// backend settings are snapshotted safely; completion runs on a worker thread.
 void CheckHealthAsync(std::function<void(HealthCheckResult)> completion);
 
+/// OpenAI 兼容端点的模型列表（GET {base}/models）。
+/// 同步执行，供工作线程调用；失败返回空并填 error。
+std::vector<std::wstring> ListCloudModels(const std::string& baseURL, const std::string& apiKey,
+                                          std::wstring* error);
+
+/// 主线程调用：在快照 URL/Key 后拉取模型列表，结果回调到工作线程。
+void FetchCloudModelsAsync(const std::string& baseURL, const std::string& apiKey,
+                           std::function<void(std::vector<std::wstring> models,
+                                              std::wstring error)> completion);
+
 /// 测试钩子：清空缓存
 void ClearCacheForTesting();
 
 /// Pure streaming helpers shared by production parsing and contract self-tests.
 std::optional<std::wstring> ParseOpenAISSELine(const std::string& line);
 std::vector<std::string> AssembleLinesForTesting(const std::vector<std::string>& fragments);
+
+/// 测试钩子：解析 /models 响应体（OpenAI data[]、Ollama models[]、字符串数组）
+std::vector<std::wstring> ParseCloudModelList(const std::string& body);
 
 } // namespace translator

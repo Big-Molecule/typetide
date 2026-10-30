@@ -30,6 +30,13 @@ constexpr UINT kMsgOllamaModels = WM_APP + 100;
 constexpr UINT kMsgUpdateResult = WM_APP + 101;
 constexpr UINT kMsgBackendHealth = WM_APP + 102;
 constexpr UINT kMsgBuiltInProgress = WM_APP + 103;
+// 工作线程取回云端模型列表：lParam = CloudModels*（接收方释放）
+constexpr UINT kMsgCloudModels = WM_APP + 104;
+
+struct CloudModels {
+    std::vector<std::wstring> models;
+    std::wstring error;
+};
 
 struct BuiltInProgress {
     double fraction = 0;
@@ -45,7 +52,7 @@ enum CtrlId : int {
     kBackendBuiltIn, kBuiltInDownload, kBuiltInStatus, kBackendOllama, kBackendOpenAI,
     kOllamaModelLabel, kOllamaModel, kOllamaRefresh, kOllamaHint,
     kOaiProviderLabel, kOaiProvider,
-    kOaiUrlLabel, kOaiUrl, kOaiKeyLabel, kOaiKey, kOaiModelLabel, kOaiModel, kOaiHint, kPrivacyHint,
+    kOaiUrlLabel, kOaiUrl, kOaiKeyLabel, kOaiKey, kOaiModelLabel, kOaiModel, kOaiFetch, kOaiHint, kPrivacyHint,
     kBackendTest, kBackendStatus,
     // Language
     kNativeLabel, kNative, kForeignLabel, kForeign,
@@ -492,6 +499,7 @@ void updateBackendEnabled() {
     EnableWindow(ctrl(kOaiUrl), cloud);
     EnableWindow(ctrl(kOaiKey), cloud);
     EnableWindow(ctrl(kOaiModel), cloud);
+    EnableWindow(ctrl(kOaiFetch), cloud);
 }
 
 void updateBuiltInStatus() {
@@ -611,8 +619,10 @@ void buildPages() {
         makeLabel(L"API key", x + 20, y + 306, 90, kOaiKeyLabel),
         make(L"EDIT", L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD, x + 120, y + 302, 400, 30, kOaiKey),
         makeLabel(L"API model", x + 20, y + 340, 90, kOaiModelLabel),
-        make(L"EDIT", L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, x + 120, y + 336, 280, 30, kOaiModel),
-        makeLabel(L"API key is stored securely in Windows Credential Manager.",
+        // 可编辑下拉框：可手输模型名，也可以从上游 /models 里挑
+        make(L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWN | WS_VSCROLL, x + 120, y + 336, 240, 260, kOaiModel),
+        make(L"BUTTON", L"Fetch models", WS_TABSTOP | BS_PUSHBUTTON, x + 370, y + 335, 100, 32, kOaiFetch),
+        makeLabel(L"Type a model name or fetch the list from the endpoint. API key is stored securely in Windows Credential Manager.",
                   x + 20, y + 371, w - 20, kOaiHint),
         makeLabel(L"Privacy: triggered selections are sent to the configured cloud endpoint. "
                   L"Use a local backend or exclude sensitive apps for private text.",
@@ -762,7 +772,7 @@ void buildPages() {
                   L"Private local models or secure OpenAI-compatible cloud APIs.",
                   x, y + 28, w, kAboutDesc),
         make(L"SysLink",
-             L"<a href=\"https://github.com/everettjf/typetide\">GitHub</a>   ·   "
+             L"<a href=\"https://github.com/Big-Molecule/typetide\">GitHub</a>   ·   "
              L"<a href=\"https://xnu.app/TypeTide/\">Website</a>   ·   "
              L"<a href=\"https://discord.gg/eGzEaP6TzR\">Discord</a>",
              WS_TABSTOP, x, y + 84, w, 22, kAboutLinks),
@@ -919,9 +929,34 @@ void onCommand(int id, int code) {
         s.openAIKey = util::Narrow(editText(ctrl(kOaiKey)));
         break;
     case kOaiModel:
-        if (code != EN_CHANGE) return;
-        s.openAIModel = util::Narrow(editText(ctrl(kOaiModel)));
+        if (code == CBN_SELCHANGE) {
+            int sel = (int)SendMessageW(ctrl(kOaiModel), CB_GETCURSEL, 0, 0);
+            if (sel < 0) return;
+            int len = (int)SendMessageW(ctrl(kOaiModel), CB_GETLBTEXTLEN, sel, 0);
+            std::wstring m(len, 0);
+            SendMessageW(ctrl(kOaiModel), CB_GETLBTEXT, sel, (LPARAM)m.data());
+            s.openAIModel = util::Narrow(m);
+        } else if (code == CBN_EDITCHANGE) {
+            s.openAIModel = util::Narrow(editText(ctrl(kOaiModel)));
+        } else {
+            return;
+        }
         break;
+    case kOaiFetch: {
+        // 用界面上当前的 URL/Key 去查询，用户不必先失焦保存
+        const std::string base = util::Narrow(editText(ctrl(kOaiUrl)));
+        const std::string key = util::Narrow(editText(ctrl(kOaiKey)));
+        EnableWindow(ctrl(kOaiFetch), FALSE);
+        SetWindowTextW(ctrl(kOaiHint), L"Fetching the model list from the endpoint…");
+        HWND target = g.hwnd;
+        translator::FetchCloudModelsAsync(base, key,
+            [target](std::vector<std::wstring> models, std::wstring error) {
+                auto* payload = new CloudModels{std::move(models), std::move(error)};
+                if (!PostMessageW(target, kMsgCloudModels, 0, (LPARAM)payload)) delete payload;
+            });
+        save = false;
+        break;
+    }
     case kBackendTest:
         EnableWindow(ctrl(kBackendTest), FALSE);
         SetWindowTextW(ctrl(kBackendTest), L"Testing…");
@@ -1198,6 +1233,30 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         ollamamodels::PreloadAsync();
         delete models;
+        return 0;
+    }
+    case kMsgCloudModels: {
+        auto* payload = (CloudModels*)lp;
+        EnableWindow(ctrl(kOaiFetch), TRUE);
+        HWND combo = ctrl(kOaiModel);
+        const std::wstring current = util::Widen(Settings::shared().openAIModel);
+        if (!payload->models.empty()) {
+            SendMessageW(combo, CB_RESETCONTENT, 0, 0);
+            for (auto& m : payload->models)
+                SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)m.c_str());
+            // 保留用户当前输入；他可以从下拉里换一个
+            SetWindowTextW(combo, current.c_str());
+            SetWindowTextW(ctrl(kOaiHint),
+                           (L"Loaded " + std::to_wstring(payload->models.size()) +
+                            L" models from the endpoint. Pick one or keep typing a name.")
+                               .c_str());
+        } else {
+            const std::wstring message = payload->error.empty()
+                ? std::wstring(L"The endpoint returned no models.")
+                : std::wstring(L"⚠ ") + payload->error;
+            SetWindowTextW(ctrl(kOaiHint), message.c_str());
+        }
+        delete payload;
         return 0;
     }
     case kMsgUpdateResult:

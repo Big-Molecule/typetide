@@ -20,6 +20,19 @@ while ($listener.IsListening) {
     Write-Output "request: $($req.HttpMethod) $($req.Url.AbsolutePath)"
     $isOpenAI = $req.Url.AbsolutePath -like "*/chat/completions"
     $isOllama = $req.Url.AbsolutePath -eq "/api/generate"
+    $isModels = $req.Url.AbsolutePath -like "*/models"
+    if ($isModels) {
+        # 供设置页的 "Fetch models" 使用；回显鉴权头方便确认请求带上了 Key
+        $auth = $req.Headers['Authorization']
+        $body = '{"object":"list","data":[{"id":"mock-model"},{"id":"mock-model-large"},{"id":"mock-model-cheap"}]}'
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+        $res.StatusCode = 200
+        $res.ContentType = "application/json"
+        $res.Headers.Add("X-Mock-Authorization", [string]$auth)
+        $res.OutputStream.Write($bytes, 0, $bytes.Length)
+        $res.Close()
+        continue
+    }
     if (-not ($isOpenAI -or $isOllama)) {
         $res.StatusCode = 404; $res.Close(); continue
     }

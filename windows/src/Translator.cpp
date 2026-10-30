@@ -5,6 +5,7 @@
 #include "LocalDiagnostics.h"
 #include "Settings.h"
 #include "Util.h"
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <chrono>
@@ -259,13 +260,8 @@ StreamOutcome runOpenAI(const TranslationRequest& req, const BackendConfig& s, u
     const bool localEndpoint = base.rfind("http://127.0.0.1", 0) == 0 ||
                                base.rfind("http://localhost", 0) == 0 ||
                                base.rfind("http://[::1]", 0) == 0;
-    const bool secureEndpoint = base.rfind("https://", 0) == 0;
     if (s.openAIKey.empty() && !localEndpoint) {
         out.error = L"Missing cloud API key";
-        return out;
-    }
-    if (!s.openAIKey.empty() && !secureEndpoint && !localEndpoint) {
-        out.error = L"Refusing to send an API key over an insecure HTTP connection";
         return out;
     }
 
@@ -468,6 +464,76 @@ std::optional<std::wstring> TranslateFully(const TranslationRequest& req, std::w
         return std::nullopt;
     }
     return cleaned;
+}
+
+std::vector<std::wstring> ParseCloudModelList(const std::string& body) {
+    bool parsed = false;
+    json::Value root = json::Parse(body, &parsed);
+    if (!parsed) return {};
+
+    // 兼容 OpenAI 的 {"data":[{"id":...}]}、Ollama 的 {"models":[{"name":...}]}
+    // 以及少数返回字符串数组的实现。
+    std::vector<std::wstring> models;
+    auto collect = [&](const json::Array* arr) {
+        if (!arr) return;
+        for (const auto& item : *arr) {
+            if (item.isString()) {
+                if (!item.asString().empty()) models.push_back(util::Widen(item.asString()));
+                continue;
+            }
+            for (const char* key : {"id", "name", "model"}) {
+                if (item[key].isString() && !item[key].asString().empty()) {
+                    models.push_back(util::Widen(item[key].asString()));
+                    break;
+                }
+            }
+        }
+    };
+    collect(root["data"].array());
+    if (models.empty()) collect(root["models"].array());
+    if (models.empty()) collect(root.array());
+    std::sort(models.begin(), models.end());
+    models.erase(std::unique(models.begin(), models.end()), models.end());
+    return models;
+}
+
+std::vector<std::wstring> ListCloudModels(const std::string& baseURL, const std::string& apiKey,
+                                          std::wstring* error) {
+    std::string base = baseURL;
+    while (!base.empty() && base.back() == '/') base.pop_back();
+    if (base.empty()) {
+        if (error) *error = L"Missing cloud API base URL";
+        return {};
+    }
+    std::wstring headers;
+    if (!apiKey.empty())
+        headers += L"Authorization: Bearer " + util::Widen(apiKey) + L"\r\n";
+
+    http::Result r = http::Get(util::Widen(base) + L"/models", headers);
+    if (!r.ok) {
+        if (error) {
+            *error = r.status == 0 ? L"Can't reach the endpoint — check the base URL"
+                                   : providerError(r);
+        }
+        return {};
+    }
+
+    std::vector<std::wstring> models = ParseCloudModelList(r.body);
+    if (models.empty() && error) {
+        *error = r.body.empty() ? L"Unexpected empty response from the endpoint"
+                                : L"No models returned by the endpoint";
+    }
+    return models;
+}
+
+void FetchCloudModelsAsync(const std::string& baseURL, const std::string& apiKey,
+                           std::function<void(std::vector<std::wstring> models,
+                                              std::wstring error)> completion) {
+    std::thread([baseURL, apiKey, completion = std::move(completion)] {
+        std::wstring error;
+        std::vector<std::wstring> models = ListCloudModels(baseURL, apiKey, &error);
+        completion(std::move(models), std::move(error));
+    }).detach();
 }
 
 void CheckHealthAsync(std::function<void(HealthCheckResult)> completion) {

@@ -17,7 +17,7 @@ Shortcut / SelectionMonitor ─► SelectionCapture ─► Translator ─► pro
                               Popup / TextReplacer  ◄──── streamed result
 ```
 
-Backends: Ollama (`http://127.0.0.1:11434`) or any OpenAI-compatible endpoint
+Backend: any OpenAI-compatible endpoint
 (`/chat/completions`, SSE streaming; model list via `GET {base}/models`).
 10 languages, native/foreign pair, per-shortcut direction (auto-detect or
 fixed), 4 rewrite styles.
@@ -30,8 +30,7 @@ dependencies (tiny JSON parser included in `src/Json.h`).
 - `src/App.*` — orchestrator, owns the message-only window that receives hotkeys and worker notifications; also dispatches hook events (`hooks::MouseMessage` / `KeyMessage`) and paces streaming UI updates on a 33 ms timer.
 - `src/SelectionCapture.*` — UI Automation TextPattern selection + synthetic Ctrl+C clipboard fallback (clipboard always restored); also returns the selection's screen rect for popup anchoring.
 - `src/TextReplacer.*` — synthetic Ctrl+V paste (undo-safe), clipboard restored after.
-- `src/Translator.*` — provider interface; Ollama NDJSON + OpenAI SSE streaming over WinHTTP; in-memory LRU cache; `ListCloudModels`/`FetchCloudModelsAsync` for the `/models` picker. Ollama requests send `"think": false` (retry without on 400) — thinking models (qwen3 family) otherwise stall for minutes on hidden reasoning.
-- `src/OllamaModels.*` — `/api/tags` model list (settings dropdown) + auto-replace an uninstalled configured model at startup.
+- `src/Translator.*` — provider interface; OpenAI SSE streaming over WinHTTP; in-memory LRU cache; `ListCloudModels`/`FetchCloudModelsAsync` for the `/models` picker.
 - `src/Language.*` — 10 languages, prompts, detection (script ranges + Latin stopword scoring).
 - `src/PopupWindow.*` — streaming translation popup (Copy / Replace, Esc / click-outside dismiss). Skips `SetWindowPos` when its size is unchanged and steps height in 24 px increments while streaming.
 - `src/Hooks.*` — shared low-level mouse/keyboard hooks on a dedicated hook thread; callbacks only queue events for the main thread (never do work there). Escape swallowing is decided synchronously via lock-free atomic gates.
@@ -80,6 +79,5 @@ version. Platform/dependency versions (Windows 10+, C++20) are fine.
 
 - Use **TypeTide** consistently in repository metadata, update feeds, documentation, UI, and package names; treat Saypick only as historical naming.
 - Track selection-capture success, replacement success, time to first translated token, total latency, cancellation, and provider failure locally during development without collecting user text.
-- Keep Ollama as a first-class offline path and make network-provider use obvious before selected text leaves the device.
 - Maintain tests for language direction, smart detection, prompt construction, streaming assembly, and clipboard restoration.
 - Keep the streaming pipeline responsive: hook callbacks stay cheap, translation deltas stay batched — no per-token UI messages.

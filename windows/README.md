@@ -12,9 +12,8 @@ bundled llama.cpp CPU runtime powers the built-in model. No Electron.
 | Write · rewrite in place | Ctrl+Shift+R |
 | Selection capture | UI Automation TextPattern → clipboard fallback |
 | Undo-safe replace | synthetic Ctrl+V |
-| Backends | Ollama · OpenAI-compatible (plain HTTP allowed for LAN endpoints) |
-| Model picker | Ollama dropdown from /api/tags · Fetch models from {base}/models · hand-typed names |
-| Ollama auto-resolve | invalid model auto-replaced at startup |
+| Backends | OpenAI-compatible API (plain HTTP allowed for LAN endpoints) |
+| Model picker | Fetch models from {base}/models · hand-typed names |
 | Floating icon / auto-translate on select | low-level mouse hook (dedicated hook thread) |
 | Retarget language in popup | ✅ |
 | Styles (Faithful/Formal/Casual/Polished) | ✅ |
@@ -35,14 +34,12 @@ write `debug.log` beside it).
 Cloud API presets are available for OpenAI, OpenRouter, and DeepSeek, alongside
 any custom OpenAI-compatible `/chat/completions` endpoint. In normal use the API
 key is stored in Windows Credential Manager; it is never written back to
-`settings.json`. Ollama models are preloaded at startup and kept warm for 10
-minutes to avoid cold-start delays.
+`settings.json`.
 
 The shortcut editor supports Ctrl, Shift, Alt, and the Windows key. Each of the
 two shortcuts independently chooses smart/native/foreign direction and popup or
 in-place replacement. Either shortcut can be cleared; keep at least one configured
-for keyboard triggering. The Ollama picker also recommends an installed model size
-from the machine's physical memory; it never downloads or changes models by itself.
+for keyboard triggering.
 
 ## Build
 
@@ -74,7 +71,7 @@ End-to-end (drives the real app + a mock backend + a scratch editor window;
 uses synthetic input, so keep hands off the keyboard while it runs):
 
 ```powershell
-# terminal 1 — mock backend (OpenAI SSE + Ollama NDJSON on :8199)
+# terminal 1 — mock backend (OpenAI SSE + model list on :8199)
 scripts\mock-openai.ps1
 
 # terminal 2 — point the app at a scratch data dir with mock settings, then:
@@ -84,7 +81,7 @@ scripts\test-e2e-wpf.ps1    # WPF host → UI Automation TextPattern path
 ```
 
 For the complete release-candidate matrix (hotkey conflicts, first-run checks,
-dark mode, clipboard restoration, cloud/Ollama streaming, and installer smoke
+dark mode, clipboard restoration, cloud streaming, and installer smoke
 tests), follow [`TESTING.md`](TESTING.md) on a Windows machine.
 
 ## Architecture
@@ -94,8 +91,7 @@ main.cpp             single instance, COM init, message loop
 App                  orchestrator: hotkeys, flows, thread marshaling (WM_APP_*)
 SelectionCapture     UIA TextPattern selection (+ rect) → synthetic Ctrl+C fallback
 TextReplacer         clipboard paste replace (undo-safe), clipboard restored
-Translator           prompts · Ollama NDJSON · OpenAI SSE · LRU cache (worker threads)
-OllamaModels         /api/tags model list · auto-resolve · async preload/keep-alive
+Translator           prompts · OpenAI SSE streaming · /models list · LRU cache (worker threads)
 Http                 WinHTTP streaming POST / GET
 PopupWindow          no-activate topmost popup: streaming text, Copy/Replace,
                      retarget menu, Esc / click-outside dismiss, dark mode, DPI
@@ -122,10 +118,6 @@ Reliability notes:
 - The tray icon re-registers itself after an explorer.exe restart.
 - Selections over 5000 characters are rejected with a friendly message.
 
-Thinking models (qwen3 family etc.) are handled: the Ollama request sends
-`"think": false` (and retries without it for models that reject the field) —
-otherwise a 2-second translation silently burns minutes on hidden reasoning.
-
 ## Known limitations
 
 - Some apps (many Electron apps, some WinForms controls) don't expose UIA
@@ -133,19 +125,4 @@ otherwise a 2-second translation silently burns minutes on hidden reasoning.
   at the cursor instead of the selection.
 - `RegisterHotKey` fails if another app owns the combo; TypeTide warns once and
   you can pick a different shortcut in Settings → Shortcuts.
-# Built-in offline translation
 
-On a fresh install, the Translation tab offers TranslateGemma 4B as the default backend.
-Click **Download model** once (2.49 GB). TypeTide checks the pinned GGUF file's
-size and SHA-256 before enabling inference. Selected text stays on the PC; only
-the model download contacts Hugging Face. The bundled CPU llama.cpp runtime is
-started on loopback when needed and requires no Ollama installation or account.
-The built-in model supports Faithful translation and Replace; choose Ollama or
-an OpenAI-compatible backend for Formal, Casual, and Polished styles. CPU-only
-inference may be slow on older hardware.
-
-The release script downloads and verifies a pinned llama.cpp Windows CPU
-archive and packages `build/llama/` beside `TypeTide.exe`. Development builds
-can prepare it with `scripts/prepare-llama-runtime.ps1`. The opt-in live gate
-`build/TypeTide.exe --selftest-builtin` downloads the model if needed and runs
-Chinese→English and English→Chinese translations.

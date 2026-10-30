@@ -14,6 +14,7 @@
 #include <shellapi.h>
 #include <uxtheme.h>
 #include <vsstyle.h>
+#include <algorithm>
 #include <string>
 #include <atomic>
 #include <memory>
@@ -79,6 +80,8 @@ struct State {
     bool highContrast = false;
     int clientWidth = 0;
     int clientHeight = 0;
+    HWND hoverButton = nullptr;            // Win11 风格按钮自绘：跟踪悬停
+    bool navBackdrop = false;              // Mica 近似背景是否已应用
 };
 
 State g;
@@ -96,9 +99,43 @@ HBRUSH pageBrush() { static HBRUSH light = CreateSolidBrush(RGB(0xF3, 0xF3, 0xF3
 HBRUSH navBrush() { static HBRUSH light = CreateSolidBrush(RGB(0xF0, 0xEF, 0xF5)); static HBRUSH dark = CreateSolidBrush(RGB(0x19, 0x19, 0x1B)); return g.dark ? dark : light; }
 HBRUSH editBrush() { static HBRUSH light = CreateSolidBrush(RGB(0xFF, 0xFF, 0xFF)); static HBRUSH dark = CreateSolidBrush(RGB(0x2B, 0x2B, 0x2E)); return g.dark ? dark : light; }
 
-// The themed BUTTON renderer can ignore WM_CTLCOLORBTN's text color.
-// Keep native glyphs/backgrounds, but explicitly draw readable dark-mode text.
-LRESULT drawDarkButton(NMCUSTOMDRAW* draw) {
+// ---------- Win11 风格按钮自绘 ----------
+// 圆角、Subtle 填充、悬停渐亮、按下变暗、accent 主按钮；
+// 明暗两套主题共用一套几何，颜色取自 ui::palette。
+//
+namespace win11 {
+
+constexpr int kCornerRadius = 6;   // Win11 控件圆角（96dpi 下 4px 边框圆角 + 2px 视觉）
+constexpr int kBorderWidth = 1;
+
+COLORREF blend(COLORREF a, COLORREF b, double t) {
+    t = std::clamp(t, 0.0, 1.0);
+    return RGB(GetRValue(a) + (int)((GetRValue(b) - GetRValue(a)) * t),
+               GetGValue(a) + (int)((GetGValue(b) - GetGValue(a)) * t),
+               GetBValue(a) + (int)((GetBValue(b) - GetBValue(a)) * t));
+}
+
+bool isPrimary(HWND button) {
+    wchar_t text[64]{};
+    GetWindowTextW(button, text, (int)std::size(text));
+    // 主操作按钮（accent 填充）
+    return _wcsicmp(text, L"Test connection") == 0;
+}
+
+void roundRectPath(HDC dc, const RECT& r, int radius) {
+    RECT rc = r;
+    rc.right--; rc.bottom--;  // pen 对齐
+    HRGN region = CreateRoundRectRgn(rc.left, rc.top, rc.right + 1, rc.bottom + 1, radius * 2, radius * 2);
+    // GDI RoundRect 用画笔描边 + 画刷填充，这里直接用两步：填充 + 1px 描边
+    DeleteObject(region);
+    RoundRect(dc, r.left, r.top, r.right, r.bottom, radius * 2, radius * 2);
+}
+
+} // namespace win11
+
+// Win11 风格按钮自绘（明暗两套主题统一走这里）。
+// 圆角 + Subtle 填充 + 悬停/按下状态；主操作按钮用 accent 填充。
+LRESULT drawStyledButton(NMCUSTOMDRAW* draw) {
     if (draw->dwDrawStage != CDDS_PREPAINT) return CDRF_DODEFAULT;
     HWND button = draw->hdr.hwndFrom;
     const LONG_PTR style = GetWindowLongPtrW(button, GWL_STYLE);
@@ -107,42 +144,93 @@ LRESULT drawDarkButton(NMCUSTOMDRAW* draw) {
     const bool radio = type == BS_AUTORADIOBUTTON || type == BS_RADIOBUTTON;
     if (!checkbox && !radio && type != BS_PUSHBUTTON && type != BS_DEFPUSHBUTTON)
         return CDRF_DODEFAULT;
-    HTHEME theme = OpenThemeData(button, L"Button");
-    if (!theme) return CDRF_DODEFAULT;
+
+    const ui::Palette th = ui::palette(g.dark, g.highContrast);
     const bool disabled = !IsWindowEnabled(button);
     const bool pressed = (draw->uItemState & CDIS_SELECTED) != 0;
     const bool hot = (draw->uItemState & CDIS_HOT) != 0;
-    int state = disabled ? 4 : pressed ? 3 : hot ? 2 : 1;
+    const bool isPrimary = !checkbox && !radio &&
+        win11::isPrimary(button) && type != BS_DEFPUSHBUTTON;
+
     RECT textRect = draw->rc;
     FillRect(draw->hdc, &draw->rc, pageBrush());
-    if (checkbox || radio) {
-        const int part = radio ? BP_RADIOBUTTON : BP_CHECKBOX;
-        if (SendMessageW(button, BM_GETCHECK, 0, 0) == BST_CHECKED) state += 4;
-        SIZE size{px(16), px(16)};
-        GetThemePartSize(theme, draw->hdc, part, state, nullptr, TS_TRUE, &size);
-        RECT glyph{draw->rc.left, draw->rc.top + (draw->rc.bottom - draw->rc.top - size.cy) / 2,
-                   draw->rc.left + size.cx, 0};
-        glyph.bottom = glyph.top + size.cy;
-        DrawThemeBackground(theme, draw->hdc, part, state, &glyph, nullptr);
-        textRect.left = glyph.right + px(6);
-    } else {
-        if (!disabled && !pressed && !hot && type == BS_DEFPUSHBUTTON) state = PBS_DEFAULTED;
-        DrawThemeBackground(theme, draw->hdc, BP_PUSHBUTTON, state, &draw->rc, nullptr);
-        InflateRect(&textRect, -px(4), 0);
-    }
-    CloseThemeData(theme);
+
     const int saved = SaveDC(draw->hdc);
     HFONT font = (HFONT)SendMessageW(button, WM_GETFONT, 0, 0);
     if (font) SelectObject(draw->hdc, font);
-    SetBkMode(draw->hdc, TRANSPARENT);
-    SetTextColor(draw->hdc, disabled ? secondaryColor() : textColor());
+
     wchar_t text[512]{};
     GetWindowTextW(button, text, (int)std::size(text));
-    UINT flags = DT_SINGLELINE | DT_VCENTER | (checkbox || radio ? DT_LEFT : DT_CENTER);
+    SetBkMode(draw->hdc, TRANSPARENT);
+
+    if (checkbox || radio) {
+        // 复选/单选：glyph 交给主题渲染器（DarkMode/Explorer 已足够现代），
+        // 只统一文字颜色与背景。
+        HTHEME theme = OpenThemeData(button, L"Button");
+        if (theme) {
+            int state = disabled ? 4 : pressed ? 3 : hot ? 2 : 1;
+            const int part = radio ? BP_RADIOBUTTON : BP_CHECKBOX;
+            if (SendMessageW(button, BM_GETCHECK, 0, 0) == BST_CHECKED) state += 4;
+            SIZE size{px(16), px(16)};
+            GetThemePartSize(theme, draw->hdc, part, state, nullptr, TS_TRUE, &size);
+            RECT glyph{draw->rc.left, draw->rc.top + (draw->rc.bottom - draw->rc.top - size.cy) / 2,
+                       draw->rc.left + size.cx, 0};
+            glyph.bottom = glyph.top + size.cy;
+            DrawThemeBackground(theme, draw->hdc, part, state, &glyph, nullptr);
+            CloseThemeData(theme);
+            textRect.left = glyph.right + px(6);
+        }
+        SetTextColor(draw->hdc, disabled ? secondaryColor() : textColor());
+        UINT flags = DT_SINGLELINE | DT_VCENTER | DT_LEFT;
+        const LRESULT uiState = SendMessageW(button, WM_QUERYUISTATE, 0, 0);
+        if (uiState & UISF_HIDEACCEL) flags |= DT_HIDEPREFIX;
+        DrawTextW(draw->hdc, text, -1, &textRect, flags);
+        if ((draw->uItemState & CDIS_FOCUS) && !(uiState & UISF_HIDEFOCUS)) {
+            RECT focus = textRect;
+            InflateRect(&focus, -1, -2);
+            DrawFocusRect(draw->hdc, &focus);
+        }
+        RestoreDC(draw->hdc, saved);
+        return CDRF_SKIPDEFAULT;
+    }
+
+    // ---- 普通按钮：Win11 圆角样式 ----
+    const COLORREF fillBase = isPrimary ? ui::Accent
+        : disabled ? th.button
+        : th.surface;
+    COLORREF fill = fillBase;
+    COLORREF border = isPrimary ? fillBase : th.buttonBorder;
+    const COLORREF textColor2 = isPrimary ? ui::AccentText
+                  : disabled ? secondaryColor()
+                  : textColor();
+    if (disabled) {
+        fill = win11::blend(fillBase, pageBg(), 0.45);
+        border = win11::blend(border, pageBg(), 0.45);
+    } else if (pressed) {
+        fill = win11::blend(fillBase, g.dark ? RGB(0x00, 0x00, 0x00) : RGB(0x00, 0x00, 0x00), 0.12);
+        border = fill;
+    } else if (hot) {
+        fill = win11::blend(fillBase, g.dark ? RGB(0xFF, 0xFF, 0xFF) : RGB(0x00, 0x00, 0x00), isPrimary ? 0.10 : 0.05);
+        border = win11::blend(border, g.dark ? RGB(0xFF, 0xFF, 0xFF) : RGB(0x00, 0x00, 0x00), 0.18);
+    }
+
+    HBRUSH bgBrush = CreateSolidBrush(fill);
+    HPEN pen = CreatePen(PS_SOLID, win11::kBorderWidth, border);
+    HGDIOBJ oldBrush = SelectObject(draw->hdc, bgBrush);
+    HGDIOBJ oldPen = SelectObject(draw->hdc, pen);
+    win11::roundRectPath(draw->hdc, draw->rc, px(win11::kCornerRadius));
+    SelectObject(draw->hdc, oldPen);
+    SelectObject(draw->hdc, oldBrush);
+    DeleteObject(pen);
+    DeleteObject(bgBrush);
+
+    UINT flags = DT_SINGLELINE | DT_VCENTER | DT_CENTER;
     const LRESULT uiState = SendMessageW(button, WM_QUERYUISTATE, 0, 0);
     if (uiState & UISF_HIDEACCEL) flags |= DT_HIDEPREFIX;
+    InflateRect(&textRect, -px(4), 0);
+    SetTextColor(draw->hdc, textColor2);
     DrawTextW(draw->hdc, text, -1, &textRect, flags);
-    if ((draw->uItemState & CDIS_FOCUS) && !(uiState & UISF_HIDEFOCUS)) {
+    if ((draw->uItemState & CDIS_FOCUS) && !(uiState & UISF_HIDEFOCUS) && !isPrimary) {
         RECT focus = textRect;
         InflateRect(&focus, -1, -2);
         DrawFocusRect(draw->hdc, &focus);
@@ -1159,11 +1247,11 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_NOTIFY: {
         auto* hdr = (NMHDR*)lp;
-        if (g.dark && !g.highContrast && hdr->code == NM_CUSTOMDRAW) {
+        if (!g.highContrast && hdr->code == NM_CUSTOMDRAW) {
             wchar_t cls[32]{};
             GetClassNameW(hdr->hwndFrom, cls, (int)std::size(cls));
             if (_wcsicmp(cls, L"Button") == 0)
-                return drawDarkButton(reinterpret_cast<NMCUSTOMDRAW*>(lp));
+                return drawStyledButton(reinterpret_cast<NMCUSTOMDRAW*>(lp));
         }
         if (hdr->idFrom == kAboutLinks && (hdr->code == NM_CLICK || hdr->code == NM_RETURN)) {
             auto* link = (NMLINK*)lp;
@@ -1372,8 +1460,26 @@ void open(HWND appWindow, bool showShortcuts) {
                              wr.right - wr.left, wr.bottom - wr.top,
                              nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
     if (!g.hwnd) return;
+    // Win11 圆角窗口（Win10 上静默忽略）
+    DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
+    DwmSetWindowAttribute(g.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
     g.dark = systemUsesDarkMode();
     g.highContrast = ui::highContrastEnabled();
+    // Mica 背景材质（Win11 22H2+；旧系统调用失败时保持现有自绘背景，
+    // 不影响 Win10）。Mica 生效时客户区必须延伸进标题栏才会透出材质，
+    // 这里同时启用 DWMWCP_ROUND + ExtendFrame；WM_ERASEBKGND 的自绘
+    // 背景会在 Mica 失效的系统上照常工作。
+    if (!g.highContrast) {
+        int backdrop = 2;  // DWMSBT_MICA
+        HRESULT hr = DwmSetWindowAttribute(g.hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
+                                           &backdrop, sizeof(backdrop));
+        g.navBackdrop = SUCCEEDED(hr);
+        if (g.navBackdrop) {
+            // 把一像素边框融进背景（Win11 默认边框是亮色，Mica 下显得突兀）
+            COLORREF border = g.dark ? 0 : RGB(0xFF, 0xFF, 0xFF);
+            DwmSetWindowAttribute(g.hwnd, DWMWA_BORDER_COLOR, &border, sizeof(border));
+        }
+    }
 
     HICON smallIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APPICON),
                                         IMAGE_ICON, px(16), px(16), LR_DEFAULTCOLOR | LR_SHARED);

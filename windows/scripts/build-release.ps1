@@ -13,7 +13,17 @@ Write-Output "building TypeTide for Windows v$version"
 
 # --- 定位工具链 ---
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-$vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+# 优先用 vswhere 找 IDE/BuildTools；部分 Build Tools 安装的组件清单查不到
+# VC 组件（-requires 返回空），所以最后按 VsDevCmd.bat 是否存在兜底。
+$vsCandidates = @(
+    (& $vswhere -latest -products * -property installationPath),
+    (& $vswhere -latest -products Microsoft.VisualStudio.Product.BuildTools -property installationPath),
+    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools",
+    "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community",
+    "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional",
+    "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise"
+) | Where-Object { $_ } | Select-Object -Unique
+$vs = $vsCandidates | Where-Object { Test-Path (Join-Path $_ "Common7\Tools\VsDevCmd.bat") } | Select-Object -First 1
 if (-not $vs) { throw "Visual Studio with C++ workload not found" }
 $devcmd = Join-Path $vs "Common7\Tools\VsDevCmd.bat"
 
@@ -35,6 +45,15 @@ $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
 if (-not $iscc) { throw "Inno Setup 6 not found (winget install JRSoftware.InnoSetup)" }
 
 # --- 构建 exe（版本号已由 bump-version.sh 写进 CMakeLists/rc/manifest）---
+# cmake/ninja 可能不在系统 PATH 上（例如装在 Python 虚拟环境里），先补进 PATH
+$extraToolDirs = @(
+    "$env:ProgramFiles\CMake\bin",
+    "D:\Coding\Projects\Python\test1\.venv\Lib\site-packages\cmake\data\bin",
+    "D:\Coding\Projects\Python\test1\.venv\Scripts"
+) | Where-Object { Test-Path $_ }
+if ($extraToolDirs) { $env:PATH = ($extraToolDirs -join ";") + ";" + $env:PATH }
+if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) { throw "cmake not found on PATH" }
+
 # VsDevCmd 内部会往 stderr 吐无害噪音（vswhere 提示）；在 Stop 策略 + 管道下
 # 会被 PowerShell 当成致命错误，这里临时放宽，靠退出码判断成败。
 $eap = $ErrorActionPreference

@@ -1,4 +1,4 @@
-﻿# 发布 Windows 版到 GitHub Releases。
+# 发布 Windows 版到 GitHub Releases。
 # 版本号 = 根目录 VERSION（先用 scripts/bump-version.sh 递增并提交）。
 # release 不存在则创建（Windows 先发就由它建 tag），已存在则把资产补传上去
 # （macOS 先发过同版本时走这条路）。需要 gh 已登录：gh auth login
@@ -27,20 +27,20 @@ $zip = Join-Path $root "windows\build\TypeTide-Windows-$version.zip"
 
 # release 不存在则创建
 $ErrorActionPreference = "Continue"
-gh release view $tag --repo everettjf/typetide *> $null
+gh release view $tag --repo Big-Molecule/typetide *> $null
 $exists = ($LASTEXITCODE -eq 0)
 if (-not $exists) {
     Write-Output "creating release $tag"
-    gh release create $tag --repo everettjf/typetide --title "TypeTide $version" `
+    gh release create $tag --repo Big-Molecule/typetide --title "TypeTide $version" `
         --notes "TypeTide $version — system-wide AI translation & inline rewrite.`n`n- Windows: download and run **TypeTide-Setup-$version.exe** (or use the portable zip)`n- macOS: download **TypeTide-$version.dmg** (uploaded separately if not yet present)" 2>&1 | ForEach-Object { "$_" }
     if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
 } else {
     Write-Output "release $tag exists — uploading Windows assets to it"
 }
 
-gh release upload $tag $setup $zip --repo everettjf/typetide --clobber 2>&1 | ForEach-Object { "$_" }
+gh release upload $tag $setup $zip --repo Big-Molecule/typetide --clobber 2>&1 | ForEach-Object { "$_" }
 if ($LASTEXITCODE -ne 0) { throw "asset upload failed" }
 $ErrorActionPreference = "Stop"
 
 Write-Output ""
-Write-Output "released: https://github.com/everettjf/typetide/releases/tag/$tag"
+Write-Output "released: https://github.com/Big-Molecule/typetide/releases/tag/$tag"

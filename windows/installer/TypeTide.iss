@@ -40,7 +40,6 @@ Name: "autostart"; Description: "Start TypeTide when I sign in"; GroupDescriptio
 
 [Files]
 Source: "..\build\TypeTide.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\build\llama\*"; DestDir: "{app}\llama"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\TypeTide"; Filename: "{app}\TypeTide.exe"

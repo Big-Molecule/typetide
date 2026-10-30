@@ -21,7 +21,6 @@ constexpr UINT WM_APP_TR_DONE = WM_APP + 3;     // wParam=reqId, lParam=DoneMsg*
 constexpr UINT WM_APP_REWRITE_DONE = WM_APP + 4;// lParam=RewriteResult*
 constexpr UINT WM_APP_UPDATE = WM_APP + 5;      // 有新版本
 constexpr UINT WM_APP_OPEN_SETTINGS = WM_APP + 6;
-constexpr UINT WM_APP_MODELS = WM_APP + 7;          // lParam=std::vector<std::wstring>*（接收方释放）
 constexpr UINT WM_APP_READ_CAPTURED = WM_APP + 8;   // lParam=capture::Capture*（可空；接收方释放）
 constexpr UINT WM_APP_REWRITE_CAPTURED = WM_APP + 9;// 同上
 

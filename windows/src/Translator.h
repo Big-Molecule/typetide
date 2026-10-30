@@ -1,6 +1,5 @@
 //
-//  Translator.h — 翻译服务：提示词、Ollama / OpenAI 兼容后端（流式）、LRU 缓存。
-//  对应 macOS 的 TranslationService + providers。
+//  Translator.h — 翻译流式提示词、OpenAI 兼容后端（流式）、LRU 缓存、模型列表。
 //
 //  stream() 在工作线程执行，回调也在工作线程触发；
 //  UI 侧（App）负责用 PostMessage 转回主线程。缓存命中时回调在调用线程同步触发。
@@ -69,7 +68,7 @@ void ClearCacheForTesting();
 std::optional<std::wstring> ParseOpenAISSELine(const std::string& line);
 std::vector<std::string> AssembleLinesForTesting(const std::vector<std::string>& fragments);
 
-/// 测试钩子：解析 /models 响应体（OpenAI data[]、Ollama models[]、字符串数组）
+/// 测试钩子：解析 /models 响应体（OpenAI data[]、models[]、字符串数组）
 std::vector<std::wstring> ParseCloudModelList(const std::string& body);
 
 } // namespace translator

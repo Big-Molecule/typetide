@@ -17,8 +17,6 @@ add_executable(TypeTide WIN32
     src/Keyboard.cpp
     src/Http.cpp
     src/Translator.cpp
-    src/BuiltInModel.cpp
-    src/OllamaModels.cpp
     src/CrashDump.cpp
     src/SelectionCapture.cpp
     src/TextReplacer.cpp

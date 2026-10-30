@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-enum class TranslationBackend { BuiltIn, Ollama, OpenAI };
+enum class TranslationBackend { OpenAI };
 
 /// 划词触发方式
 enum class SelectionTrigger {
@@ -41,12 +41,6 @@ inline constexpr Hotkey kDefaultRewriteShortcut{MOD_CONTROL | MOD_SHIFT, 'R'};
 
 struct Settings {
     bool enabled = true;
-    TranslationBackend backend = TranslationBackend::BuiltIn;
-
-    // Ollama
-    std::string ollamaHost = "http://127.0.0.1";
-    int ollamaPort = 11434;
-    std::string ollamaModel = "qwen2.5:3b";
 
     // OpenAI 兼容
     std::string openAIBaseURL = "https://api.openai.com/v1";

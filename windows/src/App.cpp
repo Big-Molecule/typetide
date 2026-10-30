@@ -1,7 +1,6 @@
 #include "App.h"
 #include "Hooks.h"
 #include "LocalDiagnostics.h"
-#include "OllamaModels.h"
 #include "PopupWindow.h"
 #include "SelectionIcon.h"
 #include "SelectionMonitor.h"
@@ -79,10 +78,6 @@ bool App::init(HINSTANCE inst) {
     }
 
     updatechecker::CheckIfDue(hwnd_, WM_APP_UPDATE);
-
-    // 配置的 Ollama 模型未安装时自动挑一个已装的（避免开箱即败）。
-    // 网络在工作线程，Settings 的读写回到主线程（WM_APP_MODELS）。
-    ollamamodels::FetchInstalledAsync(hwnd_, WM_APP_MODELS);
 
     return true;
 }
@@ -578,15 +573,6 @@ LRESULT App::handle(UINT msg, WPARAM wp, LPARAM lp) {
     case WM_APP_OPEN_SETTINGS:
         openSettings();
         return 0;
-
-    case WM_APP_MODELS: {
-        // 工作线程拉回的已装模型列表；Settings 的比对与保存在主线程做
-        auto* models = (std::vector<std::wstring>*)lp;
-        ollamamodels::ApplyResolvedModels(*models);
-        ollamamodels::PreloadAsync();
-        delete models;
-        return 0;
-    }
 
     case WM_APP_READ_CAPTURED: {
         auto* cap = (capture::Capture*)lp;

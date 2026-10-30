@@ -1,7 +1,7 @@
 ﻿# 翻译后端 mock：
 #   POST */chat/completions → OpenAI 风格 SSE 流式
-#   POST /api/generate      → Ollama 风格 NDJSON 流式
-# 测试用：让 TypeTide 的两种后端都有可对接的本地端点。
+#   GET  */models           → 模型列表（设置页 Fetch models 用）
+# 测试用：给 TypeTide 一个可对接的本地端点。
 # 用法: .\mock-openai.ps1 [-Port 8199] [-Reply "TRANSLATED_TEXT"]
 param(
     [int]$Port = 8199,
@@ -19,7 +19,6 @@ while ($listener.IsListening) {
     $null = (New-Object System.IO.StreamReader($req.InputStream)).ReadToEnd()
     Write-Output "request: $($req.HttpMethod) $($req.Url.AbsolutePath)"
     $isOpenAI = $req.Url.AbsolutePath -like "*/chat/completions"
-    $isOllama = $req.Url.AbsolutePath -eq "/api/generate"
     $isModels = $req.Url.AbsolutePath -like "*/models"
     if ($isModels) {
         # 供设置页的 "Fetch models" 使用；回显鉴权头方便确认请求带上了 Key
@@ -33,28 +32,22 @@ while ($listener.IsListening) {
         $res.Close()
         continue
     }
-    if (-not ($isOpenAI -or $isOllama)) {
+    if (-not $isOpenAI) {
         $res.StatusCode = 404; $res.Close(); continue
     }
     $res.StatusCode = 200
-    $res.ContentType = if ($isOpenAI) { "text/event-stream" } else { "application/x-ndjson" }
+    $res.ContentType = "text/event-stream"
     $res.SendChunked = $true
     $writer = New-Object System.IO.StreamWriter($res.OutputStream, (New-Object System.Text.UTF8Encoding($false)))  # 无 BOM
     # 把回复拆成两个 delta 模拟流式
     $half = [int][Math]::Ceiling($Reply.Length / 2)
     foreach ($part in @($Reply.Substring(0, $half), $Reply.Substring($half))) {
-        if ($isOpenAI) {
-            $json = '{"choices":[{"delta":{"content":' + (ConvertTo-Json $part) + '}}]}'
-            $writer.Write("data: $json`n`n")
-        } else {
-            $json = '{"response":' + (ConvertTo-Json $part) + ',"done":false}'
-            $writer.Write("$json`n")
-        }
+        $json = '{"choices":[{"delta":{"content":' + (ConvertTo-Json $part) + '}}]}'
+        $writer.Write("data: $json`n`n")
         $writer.Flush()
         Start-Sleep -Milliseconds 60
     }
-    if ($isOpenAI) { $writer.Write("data: [DONE]`n`n") }
-    else { $writer.Write('{"response":"","done":true}' + "`n") }
+    $writer.Write("data: [DONE]`n`n")
     $writer.Flush()
     $res.Close()
 }

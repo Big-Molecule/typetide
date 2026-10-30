@@ -1,5 +1,4 @@
 #include "Translator.h"
-#include "BuiltInModel.h"
 #include "Http.h"
 #include "Json.h"
 #include "LocalDiagnostics.h"
@@ -131,18 +130,13 @@ private:
 // 发起请求时在调用线程拍快照带走。
 
 struct BackendConfig {
-    TranslationBackend backend;
-    std::string ollamaHost;
-    int ollamaPort;
-    std::string ollamaModel;
     std::string openAIBaseURL;
     std::string openAIKey;
     std::string openAIModel;
 
     static BackendConfig snapshot() {
         const Settings& s = Settings::shared();
-        return {s.backend, s.ollamaHost, s.ollamaPort, s.ollamaModel,
-                s.openAIBaseURL, s.openAIKey, s.openAIModel};
+        return {s.openAIBaseURL, s.openAIKey, s.openAIModel};
     }
 };
 
@@ -182,65 +176,6 @@ std::wstring providerError(const http::Result& result) {
         }
     }
     return util::Widen(result.error);
-}
-
-StreamOutcome runOllama(const TranslationRequest& req, const BackendConfig& s, uint64_t id,
-                        const DeltaFn& onDelta, const std::atomic<bool>& cancel) {
-    StreamOutcome out;
-
-    auto makeBody = [&](bool disableThink) {
-        json::Object options;
-        options["temperature"] = 0.3;
-        options["top_p"] = 0.9;
-        options["top_k"] = 40;
-
-        json::Object body;
-        body["model"] = s.ollamaModel;
-        body["prompt"] = PlainPrompt(req.text, req.target, req.source, req.style);
-        body["stream"] = true;
-        body["keep_alive"] = "10m";
-        // 思考型模型（qwen3 系等）默认会先生成大段隐藏推理，翻译一句要几分钟；
-        // 必须显式关闭。不支持该字段的模型会 400，调用方去掉后重试。
-        if (disableThink) body["think"] = false;
-        body["options"] = json::Value(std::move(options));
-        return json::Value(std::move(body)).dump();
-    };
-
-    std::wstring url = util::Widen(s.ollamaHost) + L":" + std::to_wstring(s.ollamaPort) + L"/api/generate";
-
-    LineAssembler lines;
-    auto onLine = [&](const std::string& line) {
-            bool ok = false;
-            json::Value v = json::Parse(line, &ok);
-            if (!ok) return;
-            const std::string& delta = v["response"].asString();
-            if (!delta.empty()) {
-                std::wstring wdelta = util::Widen(delta);
-                out.full += wdelta;
-                onDelta(id, wdelta);
-            }
-    };
-    auto onChunk = [&](const char* data, size_t len) {
-        lines.feed(data, len, onLine);
-    };
-
-    http::Result r = http::PostStream(url, makeBody(true), L"", onChunk, cancel);
-    if (r.status == 400 && !cancel.load()) {
-        // 模型不支持 think 字段 → 去掉重试
-        util::Log("ollama: think rejected (400), retrying without");
-        lines = LineAssembler();
-        out.full.clear();
-        r = http::PostStream(url, makeBody(false), L"", onChunk, cancel);
-    }
-    if (!r.ok) {
-        out.error = r.status == 0 && !cancel.load()
-                        ? L"Can't reach Ollama — is `ollama serve` running?"
-                        : util::Widen(r.error);
-        return out;
-    }
-    lines.finish(onLine);
-    out.ok = true;
-    return out;
 }
 
 StreamOutcome runOpenAI(const TranslationRequest& req, const BackendConfig& s, uint64_t id,
@@ -311,22 +246,6 @@ StreamOutcome runOpenAI(const TranslationRequest& req, const BackendConfig& s, u
     return out;
 }
 
-StreamOutcome runBuiltIn(const TranslationRequest& req, uint64_t id,
-                         const DeltaFn& onDelta, const std::atomic<bool>& cancel) {
-    StreamOutcome out;
-    out.ok = builtin::Stream(req, id, onDelta, cancel, &out.full, &out.error);
-    return out;
-}
-
-const char* backendName(TranslationBackend backend) {
-    switch (backend) {
-    case TranslationBackend::BuiltIn: return "builtin-translategemma-q4km";
-    case TranslationBackend::OpenAI: return "openai";
-    case TranslationBackend::Ollama: return "ollama";
-    }
-    return "unknown";
-}
-
 } // namespace
 
 std::string SystemPrompt(Language target, std::optional<Language> source, RewriteStyle style) {
@@ -363,7 +282,7 @@ uint64_t Stream(const TranslationRequest& req, DeltaFn onDelta, DoneFn onDone) {
     BackendConfig cfg = BackendConfig::snapshot();
 
     // 缓存命中：同步回调全文
-    const char* provider = backendName(cfg.backend);
+    constexpr const char* provider = "openai";
     std::string key = cacheKey(req, provider);
     if (auto cached = Cache::shared().get(key)) {
         onDelta(id, *cached);
@@ -387,11 +306,7 @@ uint64_t Stream(const TranslationRequest& req, DeltaFn onDelta, DoneFn onDone) {
             if (!delta.empty() && !firstToken) firstToken = std::chrono::steady_clock::now();
             onDelta(requestId, delta);
         };
-        StreamOutcome out = cfg.backend == TranslationBackend::BuiltIn
-                                ? runBuiltIn(req, id, trackedDelta, *cancel)
-                            : cfg.backend == TranslationBackend::OpenAI
-                                ? runOpenAI(req, cfg, id, trackedDelta, *cancel)
-                                : runOllama(req, cfg, id, trackedDelta, *cancel);
+        StreamOutcome out = runOpenAI(req, cfg, id, trackedDelta, *cancel);
         bool cancelled = cancel->load();
         finishRequest(id);
         const auto end = std::chrono::steady_clock::now();
@@ -399,7 +314,7 @@ uint64_t Stream(const TranslationRequest& req, DeltaFn onDelta, DoneFn onDone) {
         const int firstMs = firstToken
             ? (int)std::chrono::duration_cast<std::chrono::milliseconds>(*firstToken - start).count()
             : -1;
-        const char* backend = backendName(cfg.backend);
+        const char* backend = provider;
         if (cancelled) {
             diagnostics::Record("translation", "cancelled", backend, {}, "cancelled",
                                 firstMs, totalMs, (int)req.text.size());
@@ -471,7 +386,7 @@ std::vector<std::wstring> ParseCloudModelList(const std::string& body) {
     json::Value root = json::Parse(body, &parsed);
     if (!parsed) return {};
 
-    // 兼容 OpenAI 的 {"data":[{"id":...}]}、Ollama 的 {"models":[{"name":...}]}
+    // 兼容 OpenAI 的 {"data":[{"id":...}]}、{"models":[{"name":...}]} 等返回结构
     // 以及少数返回字符串数组的实现。
     std::vector<std::wstring> models;
     auto collect = [&](const json::Array* arr) {
@@ -546,7 +461,6 @@ void CheckHealthAsync(std::function<void(HealthCheckResult)> completion) {
         std::optional<std::chrono::steady_clock::time_point> first;
     };
     auto state = std::make_shared<State>();
-    const std::string backend = backendName(Settings::shared().backend);
     Stream(
         {L"TypeTide health check " + std::to_wstring(stamp), Language::English,
          Language::Chinese, RewriteStyle::Faithful},
@@ -555,7 +469,7 @@ void CheckHealthAsync(std::function<void(HealthCheckResult)> completion) {
             if (!delta.empty() && !state->first) state->first = std::chrono::steady_clock::now();
             state->full += delta;
         },
-        [state, start, backend, completion = std::move(completion)](
+        [state, start, completion = std::move(completion)](
             uint64_t, bool success, const std::wstring& message) mutable {
             const auto end = std::chrono::steady_clock::now();
             std::lock_guard lock(state->mutex);
@@ -568,7 +482,7 @@ void CheckHealthAsync(std::function<void(HealthCheckResult)> completion) {
                 : -1;
             result.totalMs = (int)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
             diagnostics::Record("backendHealthCheck", result.ok ? "success" : "failure",
-                                backend, {}, result.ok ? "" : "backend",
+                                "openai", {}, result.ok ? "" : "backend",
                                 result.firstTokenMs, result.totalMs);
             completion(std::move(result));
         });

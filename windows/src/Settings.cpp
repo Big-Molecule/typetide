@@ -67,16 +67,6 @@ void Settings::load() {
     };
 
     enabled = boolean("enabled", enabled);
-    const std::string backendCode = str("backend", "builtin");
-    backend = backendCode == "builtin" ? TranslationBackend::BuiltIn
-            : backendCode == "openai" ? TranslationBackend::OpenAI : TranslationBackend::Ollama;
-
-    ollamaHost = str("ollamaHost", ollamaHost);
-    ollamaPort = root["ollamaPort"].isNull() ? ollamaPort : root["ollamaPort"].asInt(ollamaPort);
-    if (ollamaPort < 1 || ollamaPort > 65535) ollamaPort = 11434;
-    ollamaModel = str("ollamaModel", ollamaModel);
-    if (ollamaHost.size() > 2048) ollamaHost = "http://127.0.0.1";
-    if (ollamaModel.size() > 256) ollamaModel = "qwen2.5:3b";
 
     openAIBaseURL = str("openAIBaseURL", openAIBaseURL);
     if (openAIBaseURL.size() > 2048) openAIBaseURL = "https://api.openai.com/v1";
@@ -157,12 +147,6 @@ void Settings::load() {
 bool Settings::save() const {
     json::Object root;
     root["enabled"] = enabled;
-    root["backend"] = backend == TranslationBackend::BuiltIn ? "builtin"
-                    : backend == TranslationBackend::OpenAI ? "openai" : "ollama";
-
-    root["ollamaHost"] = ollamaHost;
-    root["ollamaPort"] = ollamaPort;
-    root["ollamaModel"] = ollamaModel;
 
     root["openAIBaseURL"] = openAIBaseURL;
     wchar_t testDir[2]{};

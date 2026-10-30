@@ -4,29 +4,29 @@ Native Win32 C++20 port of TypeTide — system-wide AI translation & inline
 rewrite. WinHTTP handles networking, UI Automation captures selections, and a
 bundled llama.cpp CPU runtime powers the built-in model. No Electron.
 
-## Feature parity with macOS
+## Feature overview
 
-| | macOS | Windows |
-|---|---|---|
-| Read · translate selection | ⌥D → popup | Alt+D → popup |
-| Write · rewrite in place | ⌥R | Ctrl+Shift+R |
-| Selection capture | AX API → clipboard fallback | UI Automation TextPattern → clipboard fallback |
-| Undo-safe replace | synthetic ⌘V | synthetic Ctrl+V |
-| Backends | Built-in TranslateGemma · Ollama · OpenAI-compatible | same |
-| Ollama model picker / auto-resolve | ✅ | ✅ (dropdown from /api/tags; invalid model auto-replaced at startup) |
-| Floating icon / auto-translate on select | ✅ | ✅ (low-level mouse hook) |
-| Retarget language in popup | ✅ | ✅ |
-| Styles (Faithful/Formal/Casual/Polished) | ✅ | ✅ |
-| Menu bar / tray | menu bar | system tray |
-| Launch at login | SMAppService | HKCU Run key |
-| Per-app skip list | ✅ | ✅ (exe name) |
-| Update check | GitHub Releases | same |
-| Settings | SwiftUI window | native tabbed window |
-| Shortcut actions / verification | ✅ | ✅ |
-| First-run backend check | ✅ | ✅ |
-| Local privacy-safe diagnostics | ✅ | ✅ |
-| System light/dark settings UI | ✅ | ✅ |
-| Permissions needed | Accessibility | none |
+| | Windows |
+|---|---|
+| Read · translate selection | Alt+D → popup |
+| Write · rewrite in place | Ctrl+Shift+R |
+| Selection capture | UI Automation TextPattern → clipboard fallback |
+| Undo-safe replace | synthetic Ctrl+V |
+| Backends | Ollama · OpenAI-compatible (plain HTTP allowed for LAN endpoints) |
+| Model picker | Ollama dropdown from /api/tags · Fetch models from {base}/models · hand-typed names |
+| Ollama auto-resolve | invalid model auto-replaced at startup |
+| Floating icon / auto-translate on select | low-level mouse hook (dedicated hook thread) |
+| Retarget language in popup | ✅ |
+| Styles (Faithful/Formal/Casual/Polished) | ✅ |
+| Launch at login | HKCU Run key |
+| Per-app skip list | ✅ (exe name) |
+| Update check | GitHub Releases (repo from TYPETIDE_UPDATE_REPO) |
+| Settings | native tabbed window |
+| Shortcut actions / verification | ✅ |
+| First-run backend check | ✅ |
+| Local privacy-safe diagnostics | ✅ |
+| System light/dark settings UI | ✅ |
+| Permissions needed | none |
 
 Settings persist to `%APPDATA%\TypeTide\settings.json`
 (override dir with the `TYPETIDE_DATA_DIR` env var; set `TYPETIDE_DEBUG=1` to
@@ -56,8 +56,8 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build          # → build\TypeTide.exe
 ```
 
-The tray icon (`assets/app.ico`) is generated from the macOS icon set with
-`scripts\make-icon.ps1`.
+The tray icon (`assets/app.ico`) ships in the repo; regenerate it from the
+brand master with `scripts\make-icon.ps1` if the branding changes.
 
 ## Test
 

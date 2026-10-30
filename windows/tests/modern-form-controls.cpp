@@ -1,6 +1,7 @@
 #include "ModernFormControls.h"
 #include "UITheme.h"
 #include <commctrl.h>
+#include <algorithm>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -145,21 +146,69 @@ int main() {
     SendMessageW(info.hwndItem, WM_KEYDOWN, VK_DOWN, 0);
     SendMessageW(info.hwndItem, WM_KEYDOWN, VK_ESCAPE, 0);
     check(text(model) == L"manually-typed-model", "editable combo preserves custom text on cancel");
-    HWND longMenu = combo(false, 106);
-    for (int i = 0; i < 37; ++i) {
+    HWND longMenu = combo(true, 106);
+    for (int i = 0; i < 38; ++i) {
         const auto name = L"Model " + std::to_wstring(i);
         SendMessageW(longMenu, CB_ADDSTRING, 0, (LPARAM)name.c_str());
     }
     SendMessageW(longMenu, CB_SHOWDROPDOWN, TRUE, 0);
     popup = FindWindowW(L"TypeTideFormMenu", nullptr);
     list = GetDlgItem(popup, 1);
+    check(SendMessageW(list, LB_GETCOUNT, 0, 0) == 41, "all 41 model candidates are present");
+    // Windows can route wheel input straight to the child under the pointer,
+    // rather than to the popup or focused combo/editor.
+    SendMessageW(list, WM_MOUSEWHEEL, MAKEWPARAM(0, -WHEEL_DELTA), 0);
+    check(SendMessageW(list, LB_GETTOPINDEX, 0, 0) > 0, "wheel over model rows scrolls without scrollbar");
     SendMessageW(popup, WM_MOUSEWHEEL, MAKEWPARAM(0, -WHEEL_DELTA), 0);
     check(SendMessageW(list, LB_GETTOPINDEX, 0, 0) > 0, "wheel scroll works without scrollbar");
     check(!(GetWindowLongPtrW(list, GWL_STYLE) & WS_VSCROLL), "scrolling never adds a scrollbar");
+    SendMessageW(list, LB_SETTOPINDEX, 0, 0);
+    SendMessageW(list, WM_MOUSEWHEEL, MAKEWPARAM(0, -WHEEL_DELTA / 2), 0);
+    check(SendMessageW(list, LB_GETTOPINDEX, 0, 0) == 0, "partial wheel deltas accumulate without premature scrolling");
+    SendMessageW(list, WM_MOUSEWHEEL, MAKEWPARAM(0, -WHEEL_DELTA / 2), 0);
+    check(SendMessageW(list, LB_GETTOPINDEX, 0, 0) == 3, "accumulated wheel deltas scroll exactly once");
+    COMBOBOXINFO longInfo{sizeof(longInfo)};
+    GetComboBoxInfo(longMenu, &longInfo);
+    SendMessageW(longInfo.hwndItem, WM_MOUSEWHEEL, MAKEWPARAM(0, -WHEEL_DELTA), 0);
+    check(SendMessageW(list, LB_GETTOPINDEX, 0, 0) == 6, "wheel routed through editable model text also scrolls");
+    SendMessageW(longMenu, WM_MOUSEWHEEL, MAKEWPARAM(0, WHEEL_DELTA), 0);
+    check(SendMessageW(list, LB_GETTOPINDEX, 0, 0) == 3, "wheel routed through combo scrolls upwards");
+    RECT listBounds{};
+    GetClientRect(list, &listBounds);
+    const int visibleRows = listBounds.bottom / px(form::MenuItemHeight);
+    std::vector<bool> visited(41, false);
+    SendMessageW(list, LB_SETTOPINDEX, 0, 0);
+    const int beforeScroll = selections;
+    for (int step = 0; step < 45; ++step) {
+        const int top = (int)SendMessageW(list, LB_GETTOPINDEX, 0, 0);
+        for (int i = top; i < std::min(41, top + visibleRows); ++i) visited[i] = true;
+        SendMessageW(list, WM_MOUSEWHEEL, MAKEWPARAM(0, -WHEEL_DELTA), 0);
+    }
+    check(std::all_of(visited.begin(), visited.end(), [](bool seen) { return seen; }),
+          "wheel scrolling exposes every one of 41 candidates");
+    check(SendMessageW(list, LB_GETTOPINDEX, 0, 0) == 41 - visibleRows, "wheel stops at last full page");
+    check(SendMessageW(longMenu, CB_GETCURSEL, 0, 0) == 0 && selections == beforeScroll,
+          "scrolling does not change committed model or emit selection notifications");
+    const int lastRow = 40 - (int)SendMessageW(list, LB_GETTOPINDEX, 0, 0);
+    POINT lastPoint{px(40), lastRow * px(form::MenuItemHeight) + px(12)};
+    MapWindowPoints(list, popup, &lastPoint, 1);
+    SendMessageW(popup, WM_LBUTTONUP, 0, MAKELPARAM(lastPoint.x, lastPoint.y));
+    check(SendMessageW(longMenu, CB_GETCURSEL, 0, 0) == 40, "mouse can select 41st model after scrolling");
+    SendMessageW(longMenu, CB_SHOWDROPDOWN, TRUE, 0);
+    popup = FindWindowW(L"TypeTideFormMenu", nullptr);
+    list = GetDlgItem(popup, 1);
+    for (int step = 0; step < 45; ++step)
+        SendMessageW(list, WM_MOUSEWHEEL, MAKEWPARAM(0, WHEEL_DELTA), 0);
+    check(SendMessageW(list, LB_GETTOPINDEX, 0, 0) == 0, "wheel can return from last page to first page");
+    SendMessageW(longMenu, WM_KEYDOWN, VK_HOME, 0);
+    SendMessageW(longMenu, WM_KEYDOWN, VK_NEXT, 0);
+    check(SendMessageW(list, LB_GETCURSEL, 0, 0) > 0, "Page Down navigates long model menu");
+    SendMessageW(longMenu, WM_KEYDOWN, VK_PRIOR, 0);
+    check(SendMessageW(list, LB_GETCURSEL, 0, 0) == 0, "Page Up returns to first model");
     SendMessageW(longMenu, WM_KEYDOWN, VK_END, 0);
-    check(SendMessageW(list, LB_GETCURSEL, 0, 0) == 39, "End reaches last item of long menu");
+    check(SendMessageW(list, LB_GETCURSEL, 0, 0) == 40, "End reaches last item of long menu");
     SendMessageW(longMenu, WM_KEYDOWN, VK_RETURN, 0);
-    check(SendMessageW(longMenu, CB_GETCURSEL, 0, 0) == 39, "last item can be committed without scrollbar");
+    check(SendMessageW(longMenu, CB_GETCURSEL, 0, 0) == 40, "last item can be committed without scrollbar");
     SendMessageW(longMenu, CB_SHOWDROPDOWN, TRUE, 0);
     popup = FindWindowW(L"TypeTideFormMenu", nullptr);
     SendMessageW(popup, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(-10, -10));

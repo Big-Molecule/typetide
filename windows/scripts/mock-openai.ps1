@@ -5,7 +5,9 @@
 # 用法: .\mock-openai.ps1 [-Port 8199] [-Reply "TRANSLATED_TEXT"]
 param(
     [int]$Port = 8199,
-    [string]$Reply = "MOCK_TRANSLATION_OK"
+    [string]$Reply = "MOCK_TRANSLATION_OK",
+    [ValidateRange(1, 10000)]
+    [int]$ModelCount = 3
 )
 $ErrorActionPreference = "Stop"
 $listener = New-Object System.Net.HttpListener
@@ -23,7 +25,11 @@ while ($listener.IsListening) {
     if ($isModels) {
         # 供设置页的 "Fetch models" 使用；回显鉴权头方便确认请求带上了 Key
         $auth = $req.Headers['Authorization']
-        $body = '{"object":"list","data":[{"id":"mock-model"},{"id":"mock-model-large"},{"id":"mock-model-cheap"}]}'
+        $names = @('mock-model', 'mock-model-large', 'mock-model-cheap')
+        $models = @(for ($i = 0; $i -lt $ModelCount; ++$i) {
+            @{ id = if ($i -lt $names.Count) { $names[$i] } else { 'mock-model-{0:D3}' -f ($i + 1) } }
+        })
+        $body = @{ object = 'list'; data = $models } | ConvertTo-Json -Depth 3 -Compress
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
         $res.StatusCode = 200
         $res.ContentType = "application/json"

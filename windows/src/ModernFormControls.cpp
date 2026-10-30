@@ -193,6 +193,16 @@ int menuHit(const State& s, LPARAM point) {
     return HIWORD(hit) ? -1 : LOWORD(hit);
 }
 
+LRESULT CALLBACK listProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR) {
+    // With "scroll inactive windows" enabled, Windows sends wheel input to
+    // the row LISTBOX under the pointer, not to its captured popup parent.
+    // A native list without WS_VSCROLL ignores it. Use the popup's explicit
+    // scrolling path instead; do not enable or briefly show a scrollbar.
+    if (msg == WM_MOUSEWHEEL) return SendMessageW(GetParent(hwnd), msg, wp, lp);
+    if (msg == WM_NCDESTROY) RemoveWindowSubclass(hwnd, listProc, id);
+    return DefSubclassProc(hwnd, msg, wp, lp);
+}
+
 LRESULT CALLBACK menuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* s = reinterpret_cast<State*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (msg == WM_NCCREATE) {
@@ -296,6 +306,7 @@ void openMenu(State& s) {
         LBS_HASSTRINGS | LBS_NOINTEGRALHEIGHT, edge, edge, width - edge * 2, height - edge * 2,
         s.popup, (HMENU)1, wc.hInstance, nullptr);
     if (!s.list) { closeMenu(s, false); return; }
+    SetWindowSubclass(s.list, listProc, kSubclass, 0);
     SetWindowTheme(s.list, L"", L"");
     SendMessageW(s.list, WM_SETFONT, SendMessageW(s.root, WM_GETFONT, 0, 0), FALSE);
     SendMessageW(s.list, LB_SETITEMHEIGHT, 0, row);

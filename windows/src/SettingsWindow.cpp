@@ -39,7 +39,6 @@ enum CtrlId : int {
     // General
     kEnable, kLogin, kVersionLabel, kCheckUpdate, kFirstRunHint,
     // Backend
-    kBackendOpenAI,
     kOaiProviderLabel, kOaiProvider,
     kOaiUrlLabel, kOaiUrl, kOaiKeyLabel, kOaiKey, kOaiModelLabel, kOaiModel, kOaiFetch, kOaiHint, kPrivacyHint,
     kBackendTest, kBackendStatus,
@@ -82,6 +81,8 @@ struct State {
     int clientHeight = 0;
     HWND hoverButton = nullptr;            // Win11 风格按钮自绘：跟踪悬停
     bool navBackdrop = false;              // Mica 近似背景是否已应用
+    RECT backendCard{};                    // Backend 页字段卡片（逻辑坐标，96dpi）
+    int currentPage = 0;                   // 当前显示的页（卡片只在 Backend 页绘制）
 };
 
 State g;
@@ -465,8 +466,8 @@ HWND make(const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, in
     return c;
 }
 
-HWND makeLabel(const wchar_t* text, int x, int y, int w, int id, bool bold = false) {
-    HWND c = make(L"STATIC", text, SS_LEFT, x, y, w, 18, id);
+HWND makeLabel(const wchar_t* text, int x, int y, int w, int id, bool bold = false, int h = 18) {
+    HWND c = make(L"STATIC", text, SS_LEFT, x, y, w, h, id);
     if (bold) SendMessageW(c, WM_SETFONT, (WPARAM)g.fontBold, TRUE);
     return c;
 }
@@ -645,35 +646,46 @@ void buildPages() {
     updateFirstRunCompletion();
 
     // --- 1 Backend ---
-    y = 82;
+    // 布局：节标题 → 单选 → 分组卡片内四个字段行（标签 90px + 控件）→ 提示 → 操作行
+    y = 58;
+    const int fieldX = x + 24;      // 字段区左缘（卡片内缩进）
+    const int labelW = 110;         // 字段标签列宽
+    const int ctrlX = fieldX + labelW + 12;
+    const int rowStep = 44;         // 行距（控件高 30 + 间距 14）
     {
     std::vector<HWND> controls = {
-        makeLabel(L"PROVIDER", x, y, w, -1, true),
-        make(L"BUTTON", L"OpenAI-compatible API", WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON,
-             x, y + 26, 260, 22, kBackendOpenAI),
-        makeLabel(L"Provider", x + 20, y + 55, 90, kOaiProviderLabel),
-        make(L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST, x + 120, y + 51, 250, 180, kOaiProvider),
-        makeLabel(L"Base URL", x + 20, y + 89, 90, kOaiUrlLabel),
-        make(L"EDIT", L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, x + 120, y + 85, 400, 30, kOaiUrl),
-        makeLabel(L"API key", x + 20, y + 123, 90, kOaiKeyLabel),
-        make(L"EDIT", L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD, x + 120, y + 119, 400, 30, kOaiKey),
-        makeLabel(L"API model", x + 20, y + 157, 90, kOaiModelLabel),
+
+        // 字段行（卡片内）
+        make(L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST, ctrlX, y + 22, 260, 180, kOaiProvider),
+        makeLabel(L"Base URL", fieldX, y + 26 + rowStep, labelW, kOaiUrlLabel),
+        make(L"EDIT", L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, ctrlX, y + 22 + rowStep, w - (ctrlX - x) - 24, 30, kOaiUrl),
+        makeLabel(L"API key", fieldX, y + 26 + rowStep * 2, labelW, kOaiKeyLabel),
+        make(L"EDIT", L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD, ctrlX, y + 22 + rowStep * 2, w - (ctrlX - x) - 24, 30, kOaiKey),
+        makeLabel(L"API model", fieldX, y + 26 + rowStep * 3, labelW, kOaiModelLabel),
         // 可编辑下拉框：可手输模型名，也可以从端点 /models 里挑
-        make(L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWN | WS_VSCROLL, x + 120, y + 153, 240, 260, kOaiModel),
-        make(L"BUTTON", L"Fetch models", WS_TABSTOP | BS_PUSHBUTTON, x + 370, y + 152, 100, 32, kOaiFetch),
-        makeLabel(L"Type a model name or fetch the list from the endpoint. API key is stored securely in Windows Credential Manager.",
-                  x + 20, y + 188, w - 20, kOaiHint),
-        makeLabel(L"Privacy: triggered selections are sent to the configured endpoint. "
-                  L"Exclude sensitive apps for private text.",
-                  x + 20, y + 208, w - 20, kPrivacyHint),
+        make(L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWN | WS_VSCROLL, ctrlX, y + 22 + rowStep * 3, 240, 260, kOaiModel),
+        make(L"BUTTON", L"Fetch models", WS_TABSTOP | BS_PUSHBUTTON, ctrlX + 252, y + 21 + rowStep * 3, 110, 32, kOaiFetch),
+
+        // 模型提示（卡片外，全宽单行）
+        makeLabel(L"Type a model name, or fetch the list from the endpoint. The API key is stored in Windows Credential Manager.",
+                  x, y + 26 + rowStep * 4 + 18, w, kOaiHint, false, 36),
+
+        // 隐私说明（卡片外，全宽）
+        makeLabel(L"Privacy — triggered selections are sent to the configured endpoint. Exclude sensitive apps in «Excluded apps» for private text.",
+                  x, y + 26 + rowStep * 4 + 58, w, kPrivacyHint, false, 36),
+
+        // 操作行：主按钮 + 状态说明同一行
         make(L"BUTTON", L"Test connection", WS_TABSTOP | BS_PUSHBUTTON,
-             x + 20, y + 239, 130, 30, kBackendTest),
+             x, y + 26 + rowStep * 4 + 102, 140, 34, kBackendTest),
         makeLabel(L"Uses fixed synthetic text, never your clipboard.",
-                  x + 165, y + 245, w - 165, kBackendStatus),
+                  x + 152, y + 26 + rowStep * 4 + 110, w - 152, kBackendStatus),
     };
     g.pages[1].insert(g.pages[1].end(), controls.begin(), controls.end());
+
+    // 字段卡片背景：整块浅一档的圆角矩形（WM_ERASEBKGND 里绘制），
+    // 高度到最后一行字段底部 + 内边距，提示文字在卡片外面全宽显示
+    g.backendCard = {x, y, x + w, y + 26 + rowStep * 4 - 2};
     }
-    CheckDlgButton(g.hwnd, kBackendOpenAI, BST_CHECKED);
     SetWindowTextW(ctrl(kOaiUrl), util::Widen(s.openAIBaseURL).c_str());
     SetWindowTextW(ctrl(kOaiKey), util::Widen(s.openAIKey).c_str());
     SetWindowTextW(ctrl(kOaiModel), util::Widen(s.openAIModel).c_str());
@@ -684,8 +696,6 @@ void buildPages() {
         SendMessageW(provider, CB_SETCURSEL, cloudProviderIndex(s.openAIBaseURL), 0);
     }
     updateBackendEnabled();
-    SetWindowPos(ctrl(kPrivacyHint), nullptr,
-                 px(x + 20), px(y + 208), px(w - 20), px(35), SWP_NOZORDER);
 
     // --- 2 Language ---
     y = 82;
@@ -818,6 +828,15 @@ void buildPages() {
 }
 
 void showPage(int index) {
+    g.currentPage = index;
+    // 页切换时让整个内容区重绘（清除上一页的自绘卡片等痕迹）
+    if (g.hwnd) {
+        RECT rc{};
+        GetClientRect(g.hwnd, &rc);
+        RECT nav{0, 0, px(184), rc.bottom};
+        ExcludeClipRect(GetDC(g.hwnd), nav.left, nav.top, nav.right, nav.bottom);
+        InvalidateRect(g.hwnd, &rc, TRUE);
+    }
     for (int p = 0; p < (int)g.pages.size(); ++p)
         for (HWND c : g.pages[p])
             ShowWindow(c, p == index ? SW_SHOW : SW_HIDE);
@@ -1319,6 +1338,27 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         FillRect((HDC)wp, &rc, pageBrush());
         RECT nav{0, 0, px(184), rc.bottom};
         FillRect((HDC)wp, &nav, navBrush());
+        // Backend 页的字段卡片：浅一档的圆角面板，把四个字段在视觉上分组
+        if (g.currentPage == 1 && g.backendCard.right > g.backendCard.left) {
+            ui::Palette th = ui::palette(g.dark, g.highContrast);
+            RECT card{px(g.backendCard.left), px(g.backendCard.top),
+                      px(g.backendCard.right), px(g.backendCard.bottom)};
+            HBRUSH surface = CreateSolidBrush(th.surface);
+            HGDIOBJ oldBrush = SelectObject((HDC)wp, surface);
+            HGDIOBJ oldPen = SelectObject((HDC)wp, GetStockObject(NULL_PEN));
+            RoundRect((HDC)wp, card.left, card.top, card.right + 1, card.bottom + 1, px(10), px(10));
+            SelectObject((HDC)wp, oldPen);
+            SelectObject((HDC)wp, oldBrush);
+            // 1px 描边（内缩画，避免圆角画刷溢出）
+            HPEN outline = CreatePen(PS_SOLID, 1, th.divider);
+            HGDIOBJ oldOutline = SelectObject((HDC)wp, outline);
+            HGDIOBJ oldFill = SelectObject((HDC)wp, GetStockObject(NULL_BRUSH));
+            RoundRect((HDC)wp, card.left, card.top, card.right, card.bottom, px(10), px(10));
+            SelectObject((HDC)wp, oldOutline);
+            SelectObject((HDC)wp, oldFill);
+            DeleteObject(outline);
+            DeleteObject(surface);
+        }
         return 1;
     }
     case WM_SETTINGCHANGE:

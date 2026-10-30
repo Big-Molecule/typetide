@@ -4,7 +4,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10+-0078d4.svg" />
   <img src="https://img.shields.io/badge/C++-20-00599c.svg" />
-  <img src="https://img.shields.io/badge/AI-Ollama%20%7C%20OpenAI--compatible-7c5cff.svg" />
+  <img src="https://img.shields.io/badge/AI-OpenAI--compatible%20API-7c5cff.svg" />
   <img src="https://img.shields.io/badge/License-MIT-green.svg" />
 </p>
 
@@ -18,7 +18,7 @@ TypeTide 把翻译变成一个原地完成的系统动作。它常驻系统托�
 - **读** — 选中外语文字，按下快捷键，译文就在旁边弹出。
 - **写** — **用母语输入**，按下快捷键，文字原地改写成目标语言，直接可以发送。
 
-不用打开浏览器标签页，也不用在翻译网站之间来回复制粘贴。后端支持 **Ollama**（离线、私密）或任意 **OpenAI 兼容** API（`/chat/completions`，流式）。
+不用打开浏览器标签页，也不用在翻译网站之间来回复制粘贴。模型来自你自己的 **OpenAI 兼容** API（`/chat/completions`，流式）——云端或局域网自建网关均可，key 存在 Windows Credential Manager。
 
 <p align="center">
   <img src="docs/screenshots/rewrite.gif" alt="输入中文，按下改写快捷键，原地改写为英文" width="760" />
@@ -43,8 +43,8 @@ TypeTide 把翻译变成一个原地完成的系统动作。它常驻系统托�
 - **写 · 原地改写** — 用母语写字，按改写快捷键，输入框内容被替换成译文。可直接替换，也可先预览。
 - **每个应用都能用** — 通过 UI Automation 读取选区，对 Electron/网页类应用自动降级为剪贴板复制，文字接口不可用时也能工作。原剪贴板内容总会被还原。
 - **替换不破坏撤销** — 替换通过粘贴完成，保留每个应用原生的撤销栈（Ctrl+Z 随时可撤销）。
-- **本地或云端** — 可插拔后端：**Ollama**（离线、私密）或任意 **OpenAI 兼容** API（`/chat/completions`，流式）。设置里一键切换。
-- **模型选择** — 设置里列出已安装的 Ollama 模型，根据机器内存推荐合适尺寸；配置模型没装时自动换成已安装模型。思考型模型（qwen3 系等）会自动关闭隐藏推理，翻译保持秒回。OpenAI 兼容端点可用 **Fetch models** 从 `{base}/models` 拉取模型列表，也可以直接手输模型名。
+- **自带 API** — 任意 **OpenAI 兼容**端点（`/chat/completions`，流式）。内置 OpenAI、OpenRouter、DeepSeek 预设，也支持自定义 base URL。
+- **模型选择** — **Fetch models** 从端点的 `{base}/models` 拉取模型列表到下拉框，也可以直接手输模型名。
 - **风格** — 忠实、正式、口语、润色四种改写风格。
 - **快捷键动作可组合** — 两个全局快捷键都能独立选择智能方向或固定母语/外语目标，并决定弹窗展示或原地替换。
 - **内置可用性检查** — 首次设置会检查后端和快捷键注册；后端测试只发送固定合成文本，不读取剪贴板。
@@ -58,7 +58,7 @@ TypeTide 把翻译变成一个原地完成的系统动作。它常驻系统托�
 |---|---|---|---|
 | 任何应用里都能用（邮件、聊天、IDE、终端） | ✅ | ❌（来回粘贴） | ⚠️ 仅菜单 |
 | 回复场景**原地改写** | ✅ | ❌ | ❌ |
-| 100% 离线 / 私密 | ✅（本地 Ollama） | ❌ | ⚠️ |
+| Key 存凭据管理器 | ✅ | ❌ | ✅ |
 | 自选模型 / 接口 | ✅ | ❌ | ❌ |
 | 流式输出 | ✅ | ⚠️ | ❌ |
 
@@ -76,17 +76,7 @@ TypeTide 把翻译变成一个原地完成的系统动作。它常驻系统托�
 
 **2. 选一个后端**
 
-**本地 Ollama：**先安装 [Ollama](https://ollama.com/download)，然后：
-
-```powershell
-winget install Ollama.Ollama
-ollama pull qwen3.5:4b   # 或任何你喜欢的对话模型
-ollama serve             # 通常已作为服务在运行
-```
-
-**或云端：**在**设置 → Backend** 里选 *OpenAI-compatible API*。内置 OpenAI、OpenRouter、DeepSeek 预设，也支持任意自定义端点；**Fetch models** 可列出端点提供的模型。API key 存在 Windows Credential Manager，不写进设置文件。
-
-TypeTide 会在**设置 → Backend** 里列出你已安装的模型；配置的模型没装时会自动换成已装的——拉取*任意*一个对话模型就能跑起来。
+在**设置 → Backend** 里填一个 *OpenAI-compatible API*：选预设（OpenAI、OpenRouter、DeepSeek）或自定义 base URL，粘贴 key，然后 **Fetch models** 拉取列表或直接手输模型名。API key 存在 Windows Credential Manager，不写进设置文件。局域网自建网关（如 vLLM、one-api 等）同样按 HTTP 直连使用。
 
 **3. 首次运行**
 
@@ -113,7 +103,7 @@ Windows 无需任何特殊权限。然后：
                         │
         取词（UI Automation 选区 ─► 剪贴板兜底）
                         │
-          翻译（Ollama / OpenAI 兼容，流式）
+          翻译（OpenAI 兼容 API，流式）
                         │
       读：弹窗展示  ·  写：原地粘贴（可撤销）
 ```
@@ -122,7 +112,7 @@ Windows 无需任何特殊权限。然后：
 
 TypeTide 通过 UI Automation 跨应用读取和替换选中文字，无需单独授权。只有在触发快捷键、点击浮动图标或开启划词自动翻译后，应用才会取词。可在**设置 → Excluded apps** 中停用包含敏感信息的应用；如果不希望监听选区，请使用**仅快捷键**模式。
 
-- 使用 **Ollama** 时，取到的文字只会发往本机 `127.0.0.1` 上的 Ollama 服务；TypeTide 没有中转服务器或遥测服务。
+- TypeTide 没有中转服务器或遥测服务；取到的文字只发往你配置的 base URL。
 - 使用 **OpenAI 兼容后端**时，触发翻译后，取到的文字会发往你配置的 base URL，并受该服务商的数据保留与隐私政策约束。密码、密钥和敏感对话不应使用云端后端处理。
 - 某些应用不通过辅助功能接口暴露选区。TypeTide 会临时复制选区，读取后恢复原剪贴板；剪贴板历史或第三方剪贴板管理器仍可能记录这次临时复制。
 - API key 存在 Windows Credential Manager。
@@ -165,8 +155,8 @@ cmake --build build             # → build/TypeTide.exe
 ## 🔧 常见问题
 
 - **快捷键没反应** → 可能有其他应用占用了该热键——在**设置 → Shortcuts** 里换一个。
-- **没有译文** → Ollama：`ollama serve` 在运行吗？模型装了吗？（配置的模型没装时 TypeTide 会自动换成已装的。）OpenAI：检查 base URL / key / 模型名。
-- **qwen3 之类的模型翻译特别慢** → TypeTide 已为 Ollama 模型自动关闭隐藏「思考」；如果还是慢，可能是模型对你的硬件太大了——在**设置 → Backend** 的下拉框里换个小的。
+- **没有译文** → 检查 base URL / key / 模型名（可用**设置 → Backend** 里的**测试连接**）。
+- **翻译慢** → 速度取决于你选的模型和端点；换同一端点上更小更快的模型。
 - **某些应用里弹窗位置不准** → 这些应用不暴露文字边界；弹窗会退回到光标位置。
 - **哪个语言填哪里？** → 在**设置 → Language** 里选你的**母语**和**外语**（没有容易搞反的"源/目标"概念）。每个快捷键有自己的方向；**自动**会检测选中文字的语言并翻译成另一种。
 

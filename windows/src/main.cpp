@@ -12,6 +12,7 @@
 #include <shellapi.h>
 #include <cstdio>
 #include <atomic>
+#include <functional>
 #include <string>
 
 namespace {
@@ -86,8 +87,17 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
         return result;
     }
 
-    // 单实例：已在运行则让它打开设置窗口
-    HANDLE mutex = CreateMutexW(nullptr, TRUE, L"Local\\TypeTideSingleInstance");
+    // 单实例：已在运行则让它打开设置窗口。
+    // 隔离测试（TYPETIDE_DATA_DIR）用独立的锁名，可以和已安装的正常实例并存。
+    std::wstring mutexName = L"Local\\TypeTideSingleInstance";
+    {
+        wchar_t dataDir[1024]{};
+        if (GetEnvironmentVariableW(L"TYPETIDE_DATA_DIR", dataDir, 1024) > 0) {
+            size_t hash = std::hash<std::wstring>{}(dataDir);
+            mutexName += L"-" + std::to_wstring(hash);
+        }
+    }
+    HANDLE mutex = CreateMutexW(nullptr, TRUE, mutexName.c_str());
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         if (HWND existing = FindWindowW(kAppWindowClass, nullptr))
             PostMessageW(existing, WM_APP_OPEN_SETTINGS, 0, 0);

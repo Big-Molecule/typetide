@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# bump-version.sh — 双端共享版本号的唯一入口。
+# bump-version.sh — 版本号的唯一入口。
 #
 # 用法:
 #   ./scripts/bump-version.sh            # patch +1   (0.1.0 -> 0.1.1)
@@ -9,13 +9,9 @@
 #   ./scripts/bump-version.sh 1.2.3      # 指定版本
 #
 # 版本号唯一来源是根目录 VERSION 文件；本脚本同步写入：
-#   - macos/TypeTide.xcodeproj/project.pbxproj  (MARKETING_VERSION)
 #   - windows/CMakeLists.txt                   (project VERSION)
 #   - windows/src/TypeTide.rc                   (FILEVERSION / 字符串)
 #   - windows/src/TypeTide.manifest             (assemblyIdentity version)
-#
-# macOS 的 build number (CURRENT_PROJECT_VERSION) 独立管理，
-# 仍用 macos/scripts/increment-build.sh。
 
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,7 +27,7 @@ case "${1:-}" in
     "")        NEW="$MAJOR.$MINOR.$((PATCH + 1))" ;;
     --minor)   NEW="$MAJOR.$((MINOR + 1)).0" ;;
     --major)   NEW="$((MAJOR + 1)).0.0" ;;
-    --help|-h) sed -n '2,20p' "$0"; exit 0 ;;
+    --help|-h) sed -n '2,15p' "$0"; exit 0 ;;
     *)
         echo "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "invalid version: $1" >&2; exit 1; }
         NEW="$1"
@@ -46,11 +42,6 @@ NEW_PATCH="${NEW_REST#*.}"
 echo "$NEW" > "$VERSION_FILE"
 
 # 注：sed -i.bumpbak 后手动删备份，是 BSD(macOS)/GNU sed 唯一通用的原地写法
-
-# macOS
-sed -i.bumpbak -E "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = $NEW;/g" \
-    "$ROOT/macos/TypeTide.xcodeproj/project.pbxproj"
-rm -f "$ROOT/macos/TypeTide.xcodeproj/project.pbxproj.bumpbak"
 
 # Windows: CMake
 sed -i.bumpbak -E "s/^project\(TypeTide VERSION [0-9.]+/project(TypeTide VERSION $NEW/" \
@@ -73,6 +64,6 @@ sed -i.bumpbak -E "s/(version=\")[0-9.]+(\" processorArchitecture=\"\*\" name=\"
 rm -f "$ROOT/windows/src/TypeTide.manifest.bumpbak"
 
 echo "version: $CURRENT -> $NEW"
-echo "synced:  VERSION, macos pbxproj, windows CMakeLists/rc/manifest"
+echo "synced:  VERSION, windows CMakeLists/rc/manifest"
 echo "next:    review with 'git diff', commit, then release with"
-echo "         scripts/release-windows.ps1 (on Windows) / scripts/release-macos.sh (on macOS)"
+echo "         scripts/release-windows.ps1"

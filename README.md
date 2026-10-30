@@ -1,37 +1,30 @@
 <h1 align="center">TypeTide</h1>
-<p align="center"><b>Type in your language. Rewrite in place — in any app on macOS &amp; Windows.</b></p>
+<p align="center"><b>Type in your language. Rewrite in place — in any app on Windows.</b></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/macOS-26+-black.svg" />
   <img src="https://img.shields.io/badge/Windows-10+-0078d4.svg" />
-  <img src="https://img.shields.io/badge/Swift-6.2+-orange.svg" />
   <img src="https://img.shields.io/badge/C++-20-00599c.svg" />
   <img src="https://img.shields.io/badge/AI-Ollama%20%7C%20OpenAI--compatible-7c5cff.svg" />
   <img src="https://img.shields.io/badge/License-MIT-green.svg" />
-  <a href="https://discord.gg/eGzEaP6TzR"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" /></a>
 </p>
 
 <p align="center">
-  <a href="https://xnu.app/typetide/">🌐 Website</a> ·
-  <a href="docs/blog/introducing-typetide.md">📝 Read the intro</a> ·
+  <a href="https://github.com/Big-Molecule/typetide"><b>GitHub</b></a> ·
   <b>English</b> · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-TypeTide turns translation into an in-place system action. It lives in your menu bar (macOS) or system tray (Windows) and works in **any** app:
+> Windows-focused fork of [everettjf/typetide](https://github.com/everettjf/typetide). This fork continues development on the Windows client only; see [differences from upstream](#-differences-from-upstream).
+
+TypeTide turns translation into an in-place system action. It lives in the system tray and works in **any** app:
 
 - **Read** — select foreign text, hit a shortcut, and a translation pops up next to it.
-- **Write** — **type in your own language**, hit a shortcut, and it’s rewritten in place into the target language, ready to send.
+- **Write** — **type in your own language**, hit a shortcut, and it's rewritten in place into the target language, ready to send.
 
-No browser tab and no copy-paste loop. On Apple Silicon Macs, translation defaults to an **integrated MLX model**, downloaded once and run offline without Ollama. You can also choose **Ollama** or an **OpenAI-compatible** endpoint. Windows continues to use Ollama or an API.
-
-<p align="center">
-  <img src="docs/screenshots/tide-transition.gif" alt="TypeTide's particle tide sweeps across selected text while the translation streams in" width="760" />
-  <br/><sub><i>The TypeTide transition · a particle tide carries the original text into its streamed translation.</i></sub>
-</p>
+No browser tab and no copy-paste loop. Backends: **Ollama** (offline, private) or any **OpenAI-compatible** endpoint (`/chat/completions`, SSE streaming).
 
 <p align="center">
   <img src="docs/screenshots/rewrite.gif" alt="Type Chinese, press the rewrite shortcut, and it is rewritten into English in place" width="760" />
-  <br/><sub><i>Write · type in your language, press <kbd>⌥R</kbd> on macOS or <kbd>Ctrl+Shift+R</kbd> on Windows, and it’s rewritten in place.</i></sub>
+  <br/><sub><i>Write · type in your language, press <kbd>Ctrl+Shift+R</kbd>, and it's rewritten in place.</i></sub>
 </p>
 
 <p align="center">
@@ -50,16 +43,16 @@ No browser tab and no copy-paste loop. On Apple Silicon Macs, translation defaul
 
 - **Read · translate** — select text anywhere → popup with the translation. Trigger by shortcut, a floating icon next to the selection, or auto-translate on select.
 - **Write · rewrite in place** — write in your native language, press the rewrite shortcut, and the input field is replaced with the translation. Replace immediately or preview first.
-- **Works in every app** — uses the Accessibility API (macOS) / UI Automation (Windows) to read the selection, with a clipboard-copy fallback for Electron/web apps, so it works even where text APIs don’t. The original clipboard is always restored.
-- **Undo-safe replacement** — replacements are pasted, preserving each app’s native undo stack.
-- **Local or cloud** — pluggable backends: **Built-in MLX** (Apple Silicon Mac), **Ollama** (offline, private), or any **OpenAI-compatible** API (`/chat/completions`, streaming). Switch in Settings.
-- **Model picker** — Settings lists your installed Ollama models, recommends a comfortable size from physical memory, and auto-selects an installed model when the configured one is missing. Thinking models (qwen3 family, …) are handled — hidden reasoning is disabled so translations stay instant.
-- **Styles** — the built-in model supports Faithful translation. Formal, Casual, and Polished rewriting require Ollama or an API backend.
+- **Works in every app** — uses UI Automation to read the selection, with a clipboard-copy fallback for Electron/web apps, so it works even where text APIs don't. The original clipboard is always restored.
+- **Undo-safe replacement** — replacements are pasted, preserving each app's native undo stack.
+- **Local or cloud** — pluggable backends: **Ollama** (offline, private) or any **OpenAI-compatible** API (`/chat/completions`, streaming). Switch in Settings.
+- **Model picker** — Settings lists your installed Ollama models, recommends a comfortable size from physical memory, and auto-selects an installed model when the configured one is missing. Thinking models (qwen3 family, …) are handled — hidden reasoning is disabled so translations stay instant. For OpenAI-compatible endpoints, **Fetch models** pulls the model list from `{base}/models`; you can also just type a model name.
+- **Styles** — Faithful, Formal, Casual, and Polished rewriting.
 - **Shortcut actions** — each of the two global shortcuts can independently use smart direction or a fixed native/foreign target, then show a popup or replace in place.
-- **Built-in checks** — first-run setup verifies permissions, backend translation, and shortcut registration. The backend check uses fixed synthetic text, never the clipboard.
+- **Built-in checks** — first-run setup verifies the backend and shortcut registration. The backend check uses fixed synthetic text, never the clipboard.
 - **Private diagnostics** — optional operational events stay on the device and can be reviewed, exported, or cleared. They contain timing, outcome, backend, and capture method only—never selected text, translations, clipboard contents, app names, URLs, or credentials.
-- **Menu-bar / tray only** — no Dock or taskbar clutter. Global shortcuts, launch at login, per-app skip list.
-- **Native on both platforms** — SwiftUI on macOS, Win32 C++ on Windows. No Electron, no runtime.
+- **Tray only** — no taskbar clutter. Global shortcuts, launch at login, per-app skip list.
+- **Fully native** — Win32 C++20, CMake + Ninja. No Electron, no runtime.
 
 ## 💡 Why TypeTide
 
@@ -67,59 +60,51 @@ No browser tab and no copy-paste loop. On Apple Silicon Macs, translation defaul
 |---|---|---|---|
 | Works in any app (mail, chat, IDE, terminal) | ✅ | ❌ (paste in/out) | ⚠️ menu only |
 | Rewrite **in place** for replies | ✅ | ❌ | ❌ |
-| Runs 100% offline / private | ✅ (built-in model or local Ollama) | ❌ | ⚠️ |
+| Runs 100% offline / private | ✅ (local Ollama) | ❌ | ⚠️ |
 | Bring your own model / endpoint | ✅ | ❌ | ❌ |
 | Streaming output | ✅ | ⚠️ | ❌ |
 
 ## 🌍 Languages
 
-Detection and translation use the same 10-language set on macOS and Windows: **English (`en`), 中文 (`zh`), हिन्दी (`hi`), Español (`es`), Français (`fr`), العربية (`ar`), বাংলা (`bn`), Русский (`ru`), Português (`pt`), and Bahasa Indonesia (`id`)**.
+Detection and translation cover 10 languages: **English (`en`), 中文 (`zh`), हिन्दी (`hi`), Español (`es`), Français (`fr`), العربية (`ar`), বাংলা (`bn`), Русский (`ru`), Português (`pt`), and Bahasa Indonesia (`id`)**.
 
-Pick your native and foreign language in **Settings → Language**. Each Read/Write shortcut (`⌥D / ⌥R` on macOS, `Alt+D / Ctrl+Shift+R` on Windows) has its own direction: **auto** detects the selected text's language and translates the other way, or pin a **fixed** direction for mixed-language text.
+Pick your native and foreign language in **Settings → Language**. Each Read/Write shortcut (`Alt+D` / `Ctrl+Shift+R` by default) has its own direction: **auto** detects the selected text's language and translates the other way, or pin a **fixed** direction for mixed-language text.
 
 ## 🚀 Quick start
 
 **1. Install TypeTide**
 
-macOS — with [Homebrew](https://brew.sh) (recommended):
-```bash
-brew install --cask everettjf/tap/typetide
-```
-…or download the latest `.dmg` from [Downloads](https://xnu.app/typetide/#top), drag it to Applications, and launch it. The build is Developer ID signed and notarized by Apple.
-
-Windows — download and run the latest `TypeTide-Setup-x.y.z.exe` installer from [Downloads](https://xnu.app/typetide/#top) (per-user, no admin needed; a portable `TypeTide-Windows-x.y.z.zip` is also available). If SmartScreen warns about an unrecognized app, choose **More info → Run anyway**.
+Download the latest `TypeTide-Setup-x.y.z.exe` from [Releases](https://github.com/Big-Molecule/typetide/releases) and run it (per-user, no admin needed; a portable `TypeTide-Windows-x.y.z.zip` is also available). If SmartScreen warns about an unrecognized app, choose **More info → Run anyway**.
 
 **2. Pick a backend**
 
-**macOS (Apple Silicon):** keep the default **Built-in (Offline)** backend and click **Download Model** in first-run setup or **Settings → Backend**. The pinned TranslateGemma 4B 4-bit model downloads about 2.22 GB from Hugging Face; selected text never leaves the Mac. Downloads use two connections, show transfer speed and estimated time, and save completed 16 MiB segments. Pause or quit and resume later without downloading saved segments again. Allow about 4.5 GB of free space during installation; all files are verified before use. No Ollama, Python, account, or API key is needed. Model memory is released after two idle minutes. This backend supports Faithful translation and in-place replacement; other writing styles require Ollama/API. Long selections over the model's 2K input-token limit produce an actionable error instead of being silently truncated. Model use is subject to the [Gemma terms](https://ai.google.dev/gemma/terms).
+**Local with Ollama:** install [Ollama](https://ollama.com/download), then:
 
-**Windows or optional Mac backend:** install [Ollama](https://ollama.com/download), then:
-```bash
-# macOS: brew install ollama · Windows: winget install Ollama.Ollama
+```powershell
+winget install Ollama.Ollama
 ollama pull qwen3.5:4b   # or any compact chat model that fits your hardware
 ollama serve             # usually already running as a service
 ```
-…or cloud: in **Settings → Backend**, choose *Cloud API*. Windows includes presets for
-OpenAI, OpenRouter, and DeepSeek plus a custom OpenAI-compatible endpoint; API keys are
-kept in Windows Credential Manager rather than the settings JSON.
 
-TypeTide lists your installed models in **Settings → Backend** and auto-picks an installed one if the configured model is missing — pulling *any* chat model is enough to get going.
+**Or cloud:** in **Settings → Backend**, choose *OpenAI-compatible API*. Presets for OpenAI, OpenRouter, and DeepSeek are included, plus any custom endpoint; **Fetch models** lists the models the endpoint offers. API keys are kept in Windows Credential Manager rather than the settings JSON.
+
+TypeTide lists your installed Ollama models in **Settings → Backend** and auto-picks an installed one if the configured model is missing — pulling *any* chat model is enough to get going.
 
 **3. First run**
 
-macOS: allow TypeTide under **System Settings → Privacy & Security → Accessibility** (required to read selections and replace text). If TypeTide is missing, click **Show Current App** in setup and drag that copy into the permission list, then enable it. If an older copy has a stale grant, remove its entry and add the current copy again. Permission status refreshes automatically. Windows needs no special permission. Then:
+Windows needs no special permission. Then:
 
-- Select text → **⌥D** (macOS) / **Alt+D** (Windows) → see the translation.
-- Type in your language → **⌥R** / **Ctrl+Shift+R** → it’s rewritten in place.
+- Select text → **Alt+D** → see the translation.
+- Type in your language → **Ctrl+Shift+R** → it's rewritten in place.
 
 Shortcuts, their actions, triggers, styles, and languages are all configurable in **Settings**. Either shortcut can be cleared completely; keep at least one configured if you want keyboard triggering. Windows combinations may also include the Windows key. Use **Test Connection** and **Verify Shortcuts** to confirm the complete path before relying on it.
 
 ## ⌨️ Default shortcuts
 
-| Action | macOS | Windows |
-|---|---|---|
-| Translate selection (read) | <kbd>⌥</kbd><kbd>D</kbd> | <kbd>Alt</kbd><kbd>D</kbd> |
-| Rewrite & replace (write) | <kbd>⌥</kbd><kbd>R</kbd> | <kbd>Alt</kbd><kbd>R</kbd> |
+| Action | Windows |
+|---|---|
+| Translate selection (read) | <kbd>Alt</kbd><kbd>D</kbd> |
+| Rewrite & replace (write) | <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>R</kbd> |
 
 These are defaults, not requirements. Clear either shortcut in **Settings → Shortcuts**; if both are cleared, TypeTide warns that keyboard triggering is unavailable.
 
@@ -128,96 +113,79 @@ These are defaults, not requirements. Clear either shortcut in **Settings → Sh
 ```
 Select / type  ─►  Shortcut · floating icon · auto
                           │
-      Capture (AX / UI Automation selection ─► clipboard fallback)
+      Capture (UI Automation selection ─► clipboard fallback)
                           │
-              Translate (built-in MLX / Ollama / OpenAI-compatible, streaming)
+              Translate (Ollama / OpenAI-compatible, streaming)
                           │
         Read: popup  ·  Write: paste in place (undo-safe)
 ```
 
 ## 🔒 Privacy and system access
 
-TypeTide can read and replace selected text across applications, so macOS requires Accessibility permission; Windows uses UI Automation without a separate permission prompt. Capture happens only after a configured shortcut, floating-icon click, or auto-translate selection event. Apps containing sensitive text can be disabled in **Settings → Excluded apps**; use **shortcut only** mode when you do not want passive selection monitoring.
+TypeTide reads and replaces selected text across applications via UI Automation; no separate permission prompt is needed. Capture happens only after a configured shortcut, floating-icon click, or auto-translate selection event. Apps containing sensitive text can be disabled in **Settings → Excluded apps**; use **shortcut only** mode when you do not want passive selection monitoring.
 
-- With **Built-in (Offline)** on Apple Silicon, selected text is processed on the Mac. Download the model once before offline use.
 - With **Ollama**, captured text is sent only to the Ollama service on `127.0.0.1`. TypeTide has no hosted relay or telemetry service.
 - With an **OpenAI-compatible backend**, captured text is sent to the configured base URL when translation is triggered. That provider's retention and privacy policy applies; do not use a cloud backend for secrets or sensitive text.
 - Some apps do not expose their selection through accessibility APIs. TypeTide then briefly copies the selection, reads it, and restores the previous clipboard contents. Clipboard managers may still record that temporary copy.
-- API keys are stored in Keychain on macOS and Windows Credential Manager on Windows.
+- API keys are stored in Windows Credential Manager.
 
 ## 🏗️ Project structure
 
 ```
-macos/                 # SwiftUI app (Xcode project)
-├── TypeTide/
-│   ├── Core/          # SelectionCapture, TextReplacer, TriggerController,
-│   │                  # SelectionMonitor, PopupPositioner, LaunchAtLogin, …
-│   ├── Translation/   # TranslationProvider, Ollama / OpenAI providers,
-│   │                  # TranslationService, cache, model resolver
-│   ├── UI/            # Translation popup + floating selection icon
-│   ├── Config/        # AppSettings, LanguageConfig
-│   ├── Services/      # GlobalShortcutCenter, UpdateChecker, system service
-│   └── Views/         # Menu bar + Settings
-└── scripts/           # Release / notarization scripts
-
 windows/               # Native Win32 C++20 app (CMake)
 ├── src/               # Tray, hotkeys, UIA capture, popup, providers,
 │                      # settings window, replacer, language detection
+├── installer/         # Inno Setup script
+├── scripts/           # Build / test / mock-backend scripts
 └── assets/            # Icon
 
-docs/                  # GitHub Pages site + blog + screenshots
+contracts/             # Shared translation behavior contracts
+scripts/               # Version bump + release scripts
+docs/                  # Screenshots + notes
 ```
 
 ## 🔨 Build & release
 
-macOS:
-```bash
-cd macos
-open TypeTide.xcodeproj          # ⌘R to run
+Requirements: Windows 10+, Visual Studio 2022+ Build Tools (MSVC, CMake, Ninja). No third-party dependencies — pure Win32 + WinHTTP + UI Automation.
 
-# Signed release + notarized DMG (export APPLE_ID, APPLE_SPECIFIC_PASSWORD, APPLE_TEAM_ID first)
-./scripts/build-release.sh      # → build/TypeTide-x.y.z.dmg
-```
-
-Requirements: macOS 26+, Xcode 26+ with Swift 6.2+ and the Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`). Built-in MLX translation requires Apple Silicon. The app is **not** sandboxed (it needs Accessibility + synthetic key events). For local dev builds, sign with your Apple Development team so the Accessibility grant persists across rebuilds.
-
-Windows:
 ```powershell
 cd windows
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build             # → build/TypeTide.exe
 ```
 
-Requirements: Windows 10+, Visual Studio 2022+ (MSVC, CMake, Ninja). No third-party dependencies — pure Win32 + WinHTTP + UI Automation. See [windows/README.md](windows/README.md) for architecture and the test harness.
+**Releasing** — the version lives in the root `VERSION` file:
 
-**Releasing** — both platforms share one version (root `VERSION` file) and attach to the same GitHub release tag, in either order:
-
-```bash
-./scripts/bump-version.sh            # patch +1, syncs pbxproj / CMake / rc / manifest
-# commit, then on each platform:
-./scripts/release-windows.ps1        # Windows: builds installer + zip, creates/updates release
-./scripts/release-macos.sh           # macOS: builds notarized DMG, creates/updates release
+```powershell
+./scripts/bump-version.sh            # patch +1, syncs CMake / rc / manifest
+# commit, then:
+./scripts/release-windows.ps1        # builds installer + zip, creates release, uploads
 ```
 
-Whichever platform releases first creates the `vX.Y.Z` tag; the other uploads its asset to the same release later. Requires `gh auth login` once.
+Requires `gh auth login` once.
 
 ## 🔧 Troubleshooting
 
-- **Shortcut does nothing** → macOS: confirm Accessibility is granted (Settings → General shows *Granted*) and TypeTide is enabled in the menu bar. Windows: another app may own the hotkey — pick a different one in Settings → Shortcuts.
+- **Shortcut does nothing** → another app may own the hotkey — pick a different one in Settings → Shortcuts.
 - **No translation** → Ollama: is `ollama serve` running and the model installed? (TypeTide auto-picks an installed model if your configured one is missing.) OpenAI: check base URL / key / model.
-- **Translation is very slow on a qwen3-class model** → TypeTide disables hidden “thinking”, preloads the selected model, and keeps it warm for 10 minutes. If it still crawls, the model may be too big for your hardware — try a smaller one from **Settings → Backend**.
-- **Misaligned popup in some apps** → those apps don’t expose text bounds; the popup falls back to the cursor position.
-- **“Can’t be opened on this Mac” on Sequoia or earlier** → TypeTide requires **macOS 26+**. It’s built against the current SwiftUI menu-bar and Settings APIs, and keeping a single modern baseline is what lets a small project stay reliable. Support for older macOS isn’t planned right now.
-- **Which language goes where?** → In **Settings → Language**, pick your **native** and **foreign** language (there is no “source/target” pair to get backwards). Each shortcut has its own direction; **auto** detects the selected text and translates the other way.
+- **Translation is very slow on a qwen3-class model** → TypeTide disables hidden "thinking", preloads the selected model, and keeps it warm for 10 minutes. If it still crawls, the model may be too big for your hardware — try a smaller one from **Settings → Backend**.
+- **Misaligned popup in some apps** → those apps don't expose text bounds; the popup falls back to the cursor position.
+- **Which language goes where?** → In **Settings → Language**, pick your **native** and **foreign** language (there is no "source/target" pair to get backwards). Each shortcut has its own direction; **auto** detects the selected text and translates the other way.
+
+## 🪟 Differences from upstream
+
+This fork tracks the Windows client of [everettjf/typetide](https://github.com/everettjf/typetide) and drops the macOS app:
+
+- **Windows only** — the SwiftUI/`macos/` tree is removed; Windows is the sole supported platform.
+- **Plain-HTTP OpenAI-compatible endpoints allowed** — upstream refuses to send API keys over anything but HTTPS or loopback; this fork lets you point at LAN services over HTTP (unencrypted — use only on trusted networks).
+- **Fetch models** — pull the model list from an OpenAI-compatible endpoint's `/models` and pick from a dropdown; hand-typed model names still work.
+- **Streaming UI reworked** — input hooks run on a dedicated thread so rendering can never stall the system mouse; translation deltas are batched at ~30 fps instead of one message per token.
+- **Update check points at this fork** (`TYPETIDE_UPDATE_REPO` build option), and About links to this repository.
 
 ## 🤝 Contributing
 
-Issues and PRs welcome. The maintained README languages are English and Simplified Chinese; translations into other languages are welcome when contributors can help keep them current. Join the [Discord](https://discord.gg/eGzEaP6TzR).
+Issues and PRs welcome. The maintained README languages are English and Simplified Chinese.
 
 ## 📄 License
 
-[MIT](LICENSE) · Made with ❤️ for macOS & Windows. If TypeTide helps you, a ⭐️ is appreciated!
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=everettjf/typetide&type=Date)](https://star-history.com/#everettjf/typetide&Date)
+[MIT](LICENSE) · Based on TypeTide by [everettjf](https://github.com/everettjf). If TypeTide helps you, a ⭐️ is appreciated!

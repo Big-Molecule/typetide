@@ -1,7 +1,6 @@
 # 发布 Windows 版到 GitHub Releases。
 # 版本号 = 根目录 VERSION（先用 scripts/bump-version.sh 递增并提交）。
-# release 不存在则创建（Windows 先发就由它建 tag），已存在则把资产补传上去
-# （macOS 先发过同版本时走这条路）。需要 gh 已登录：gh auth login
+# release 不存在则创建（由本脚本建 tag）。需要 gh 已登录：gh auth login
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -32,7 +31,7 @@ $exists = ($LASTEXITCODE -eq 0)
 if (-not $exists) {
     Write-Output "creating release $tag"
     gh release create $tag --repo Big-Molecule/typetide --title "TypeTide $version" `
-        --notes "TypeTide $version — system-wide AI translation & inline rewrite.`n`n- Windows: download and run **TypeTide-Setup-$version.exe** (or use the portable zip)`n- macOS: download **TypeTide-$version.dmg** (uploaded separately if not yet present)" 2>&1 | ForEach-Object { "$_" }
+        --notes "TypeTide $version — system-wide AI translation & inline rewrite.`n`n- Windows: download and run **TypeTide-Setup-$version.exe** (or use the portable zip)" 2>&1 | ForEach-Object { "$_" }
     if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
 } else {
     Write-Output "release $tag exists — uploading Windows assets to it"

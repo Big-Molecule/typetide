@@ -47,27 +47,3 @@ jobs:
             throw "windows/CMakeLists.txt does not match VERSION=$version"
           }
           [xml](Get-Content windows/src/TypeTide.manifest -Raw) | Out-Null
-
-  macos:
-    name: macOS unit + end-to-end tests
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Ensure Metal compiler for MLX
-        run: xcrun metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
-
-      - name: XCTest (unsigned)
-        run: |
-          xcodebuild -project TypeTide.xcodeproj -scheme TypeTide \
-            -configuration Debug -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/TypeTideDerivedData" \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY= test
-        working-directory: macos
-
-      - name: Static analysis
-        run: |
-          xcodebuild -project TypeTide.xcodeproj -scheme TypeTide \
-            -configuration Debug -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/TypeTideDerivedData" \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY= analyze
-        working-directory: macos

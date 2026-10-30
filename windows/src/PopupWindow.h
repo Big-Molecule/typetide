@@ -6,6 +6,7 @@
 #include <windows.h>
 #include "Language.h"
 #include "PopupLoadingText.h"
+#include "PopupStreamText.h"
 #include <functional>
 #include <string>
 #include <optional>
@@ -61,6 +62,7 @@ private:
     void removeDismissMonitors();
     void updateFonts();
     void updateLoadingAnimation();
+    void syncStreamFadeTimer();
 
     HWND hwnd_ = nullptr;
     RECT anchor_{};
@@ -82,6 +84,9 @@ private:
     bool animationsEnabled_ = true;
     ULONGLONG loadingStarted_ = 0;
     popup::LoadingText loadingText_;
+    popup::StreamFade streamFade_;
+    popup::StreamText streamText_;
+    bool streamFadeTimerRunning_ = false;
     int width_ = 420;
     int textHeight_ = 0;
     int viewportHeight_ = 0;

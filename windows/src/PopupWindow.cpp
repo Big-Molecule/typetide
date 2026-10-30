@@ -13,6 +13,7 @@ namespace {
 constexpr wchar_t kClassName[] = L"TypeTidePopup";
 constexpr UINT_PTR kCopiedTimer = 1;
 constexpr UINT_PTR kLoadingTimer = 2;
+constexpr UINT_PTR kStreamFadeTimer = 3;
 
 bool systemPrefersDark() {
     DWORD v = 1, size = sizeof(v);
@@ -45,6 +46,8 @@ void PopupWindow::show(const std::wstring& original, Language target, RECT ancho
 
     original_ = original;
     translation_.clear();
+    streamFade_.clear();
+    streamText_.clear();
     error_.clear();
     loading_ = true;
     copiedFlash_ = false;
@@ -97,6 +100,10 @@ void PopupWindow::show(const std::wstring& original, Language target, RECT ancho
 void PopupWindow::close() {
     if (!hwnd_) return;
     KillTimer(hwnd_, kLoadingTimer);
+    KillTimer(hwnd_, kStreamFadeTimer);
+    streamFadeTimerRunning_ = false;
+    streamFade_.clear();
+    streamText_.clear();
     loadingText_.clear();
     removeDismissMonitors();
     HWND h = hwnd_;
@@ -107,11 +114,14 @@ void PopupWindow::close() {
 
 void PopupWindow::appendDelta(const std::wstring& delta) {
     if (!hwnd_ || delta.empty()) return;
+    const size_t first = translation_.size();
     translation_ += delta;
+    if (animationsEnabled_) streamFade_.append(first, translation_.size(), GetTickCount64());
     loading_ = false;
     phase_ = Phase::Flowing;
     KillTimer(hwnd_, kLoadingTimer);
     loadingText_.clear();
+    syncStreamFadeTimer();
     // 每帧只测量正文并决定是否需要调整窗口；如果宽高都没变，
     // layoutAndResize 内部不会再调用 SetWindowPos。
     layoutAndResize();
@@ -123,6 +133,7 @@ void PopupWindow::finishTranslation() {
     loading_ = false;
     phase_ = Phase::Complete;
     KillTimer(hwnd_, kLoadingTimer);
+    syncStreamFadeTimer(); // Finish the bounded fade of the last received batch.
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
@@ -132,6 +143,9 @@ void PopupWindow::setError(const std::wstring& error) {
     loading_ = false;
     phase_ = Phase::Failed;
     KillTimer(hwnd_, kLoadingTimer);
+    streamFade_.clear();
+    syncStreamFadeTimer();
+    streamText_.clear();
     loadingText_.clear();
     layoutAndResize();
     InvalidateRect(hwnd_, nullptr, TRUE);
@@ -151,6 +165,8 @@ void PopupWindow::selectSource(Language source) {
 void PopupWindow::resetForRetranslate() {
     if (!hwnd_) return;
     translation_.clear();
+    streamFade_.clear();
+    streamText_.clear();
     error_.clear();
     loading_ = true;
     phase_ = Phase::Waiting;
@@ -164,6 +180,7 @@ void PopupWindow::resetForRetranslate() {
 
 void PopupWindow::updateFonts() {
     loadingText_.clear();
+    streamText_.clear();
     if (fontHeader_) DeleteObject(fontHeader_);
     if (fontBody_) DeleteObject(fontBody_);
     if (fontSmall_) DeleteObject(fontSmall_);
@@ -184,6 +201,21 @@ void PopupWindow::updateLoadingAnimation() {
     KillTimer(hwnd_, kLoadingTimer);
     if (phase_ == Phase::Waiting && animationsEnabled_)
         SetTimer(hwnd_, kLoadingTimer, 33, nullptr);
+    if (!animationsEnabled_) streamFade_.clear();
+    syncStreamFadeTimer();
+}
+
+void PopupWindow::syncStreamFadeTimer() {
+    const auto now = GetTickCount64();
+    streamFade_.prune(now);
+    const bool active = animationsEnabled_ && streamFade_.active(now);
+    if (active && !streamFadeTimerRunning_) {
+        streamFadeTimerRunning_ = SetTimer(hwnd_, kStreamFadeTimer, 16, nullptr) != 0;
+        if (!streamFadeTimerRunning_) streamFade_.clear(); // Never leave faint text stuck on timer failure.
+    } else if (!active && streamFadeTimerRunning_) {
+        KillTimer(hwnd_, kStreamFadeTimer);
+        streamFadeTimerRunning_ = false;
+    }
 }
 
 void PopupWindow::layoutAndResize() {
@@ -204,16 +236,20 @@ void PopupWindow::layoutAndResize() {
     const int contentW = width - padX * 2;
 
     // 正文高度
-    HDC dc = GetDC(hwnd_);
-    HFONT old = (HFONT)SelectObject(dc, fontBody_);
-    std::wstring bodyText = !error_.empty() ? error_
-                          : (translation_.empty() && loading_) ? original_
-                          : translation_;
-    RECT rc{0, 0, contentW, 0};
-    DrawTextW(dc, bodyText.c_str(), -1, &rc, DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL | DT_CALCRECT);
-    SelectObject(dc, old);
-    ReleaseDC(hwnd_, dc);
-    textHeight_ = rc.bottom > px(20) ? rc.bottom : px(20);
+    int measured = error_.empty() && !translation_.empty()
+        ? streamText_.measure(translation_, fontBody_, contentW) : 0;
+    if (measured <= 0) {
+        HDC dc = GetDC(hwnd_);
+        HFONT old = (HFONT)SelectObject(dc, fontBody_);
+        const std::wstring& bodyText = !error_.empty() ? error_
+            : (translation_.empty() && loading_) ? original_ : translation_;
+        RECT rc{0, 0, contentW, 0};
+        DrawTextW(dc, bodyText.c_str(), -1, &rc, DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL | DT_CALCRECT);
+        measured = rc.bottom;
+        SelectObject(dc, old);
+        ReleaseDC(hwnd_, dc);
+    }
+    textHeight_ = std::max(measured, px(20));
     int textH = textHeight_;
 
     // 高度钳制：正文最多占所在显示器工作区的 60%，超出部分画省略号
@@ -370,9 +406,12 @@ void PopupWindow::paint(HDC dc) {
         loadingText_.draw(dc, original_, fontBody_, rcText, clipText, dpi_, loadingPalette,
                           animationsEnabled_, GetTickCount64() - loadingStarted_);
     } else {
-        SetTextColor(dc, th.text);
-        DrawTextW(dc, translation_.c_str(), -1, &rcText,
-                  DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL);
+        if (!streamText_.draw(dc, translation_, fontBody_, rcText, clipText, th.text, th.surface,
+                              streamFade_, GetTickCount64(), animationsEnabled_)) {
+            SetTextColor(dc, th.text);
+            DrawTextW(dc, translation_.c_str(), -1, &rcText,
+                      DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL);
+        }
     }
     RestoreDC(dc, saved);
 
@@ -594,7 +633,9 @@ LRESULT PopupWindow::handle(UINT msg, WPARAM wp, LPARAM lp) {
             KillTimer(hwnd_, kCopiedTimer);
             copiedFlash_ = false;
             if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
-        } else if (wp == kLoadingTimer && phase_ == Phase::Waiting && animationsEnabled_) {
+        } else if ((wp == kLoadingTimer && phase_ == Phase::Waiting && animationsEnabled_) ||
+                   (wp == kStreamFadeTimer && streamFadeTimerRunning_)) {
+            if (wp == kStreamFadeTimer) syncStreamFadeTimer();
             auto px = [&](int v) { return MulDiv(v, (int)dpi_, 96); };
             RECT body{px(ui::spacing::Large), px(36) + 1 + px(ui::spacing::Medium),
                       width_ - px(ui::spacing::Large),

@@ -22,6 +22,7 @@ add_executable(TypeTide WIN32
     src/TextReplacer.cpp
     src/Hooks.cpp
     src/PopupWindow.cpp
+    src/PopupStreamText.cpp
     src/SelectionIcon.cpp
     src/SelectionMonitor.cpp
     src/TrayIcon.cpp
@@ -50,7 +51,7 @@ if(MSVC)
 endif()
 
 target_link_libraries(TypeTide PRIVATE
-    user32 gdi32 shell32 ole32 oleaut32 uuid comctl32
+    user32 gdi32 d2d1 dwrite shell32 ole32 oleaut32 uuid comctl32
     winhttp uiautomationcore dwmapi advapi32 shlwapi uxtheme dbghelp
     comdlg32 bcrypt ws2_32
 )
@@ -70,12 +71,12 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(ModernFormControlsTest PRIVATE user32 gdi32 comctl32 dwmapi uxtheme)
     add_test(NAME modern-form-controls COMMAND ModernFormControlsTest)
-    add_executable(PopupLoadingTest tests/popup-loading.cpp src/PopupWindow.cpp src/Language.cpp)
+    add_executable(PopupLoadingTest tests/popup-loading.cpp src/PopupWindow.cpp src/PopupStreamText.cpp src/Language.cpp)
     target_include_directories(PopupLoadingTest PRIVATE src)
     target_compile_definitions(PopupLoadingTest PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
     if(MSVC)
         target_compile_options(PopupLoadingTest PRIVATE /W4 /utf-8 /EHsc)
     endif()
-    target_link_libraries(PopupLoadingTest PRIVATE user32 gdi32 dwmapi advapi32)
+    target_link_libraries(PopupLoadingTest PRIVATE user32 gdi32 d2d1 dwrite dwmapi advapi32)
     add_test(NAME popup-loading COMMAND PopupLoadingTest)
 endif()

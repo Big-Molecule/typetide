@@ -772,9 +772,7 @@ void buildPages() {
                   L"Private local models or secure OpenAI-compatible cloud APIs.",
                   x, y + 28, w, kAboutDesc),
         make(L"SysLink",
-             L"<a href=\"https://github.com/Big-Molecule/typetide\">GitHub</a>   ·   "
-             L"<a href=\"https://xnu.app/TypeTide/\">Website</a>   ·   "
-             L"<a href=\"https://discord.gg/eGzEaP6TzR\">Discord</a>",
+             L"<a href=\"https://github.com/Big-Molecule/typetide\">GitHub</a>",
              WS_TABSTOP, x, y + 84, w, 22, kAboutLinks),
     };
     g.pages[7].insert(g.pages[7].end(), controls.begin(), controls.end());

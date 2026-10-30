@@ -1,6 +1,7 @@
 #include "ModernFormControls.h"
 #include "UITheme.h"
 #include <commctrl.h>
+#include <windowsx.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
 #include <algorithm>
@@ -16,6 +17,10 @@ struct State {
     ThemeProvider theme;
     bool hover = false;
     TextProvider text = nullptr;
+    HWND popup = nullptr;
+    HWND list = nullptr;
+    int wheelDelta = 0;
+    HWND owner = nullptr;
 };
 constexpr UINT_PTR kSubclass = 0x5454464D;
 LRESULT CALLBACK proc(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
@@ -138,6 +143,196 @@ std::wstring itemText(HWND combo, int index) {
     return text;
 }
 
+// Keep the standard combo as the value/editor/accessibility control, but use
+// a separate native LISTBOX for the menu. The system ComboLBox changes its
+// current selection on hover and animates its window before drawing the rows.
+// This popup has independent preview selection and is shown fully painted.
+constexpr wchar_t kMenuClass[] = L"TypeTideFormMenu";
+
+void notify(HWND combo, int code) {
+    SendMessageW(GetParent(combo), WM_COMMAND, MAKEWPARAM(GetDlgCtrlID(combo), code), (LPARAM)combo);
+}
+
+void closeMenu(State& s, bool commit, bool notification = true) {
+    if (!s.popup) return;
+    const HWND combo = s.root, popup = s.popup;
+    const int index = (int)SendMessageW(s.list, LB_GETCURSEL, 0, 0);
+    const int previous = (int)SendMessageW(combo, CB_GETCURSEL, 0, 0);
+    s.popup = s.list = nullptr;
+    if (GetCapture() == popup) ReleaseCapture();
+    DestroyWindow(popup);
+    invalidate(combo);
+    if (!notification) return;
+    if (commit && index >= 0) {
+        SendMessageW(combo, CB_SETCURSEL, index, 0);
+        if (index != previous) notify(combo, CBN_SELCHANGE);
+        notify(combo, CBN_SELENDOK);
+    } else notify(combo, CBN_SELENDCANCEL);
+    notify(combo, CBN_CLOSEUP);
+}
+
+LRESULT CALLBACK ownerProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR ref) {
+    auto& s = *reinterpret_cast<State*>(ref);
+    const bool moving = msg == WM_WINDOWPOSCHANGING &&
+        (reinterpret_cast<WINDOWPOS*>(lp)->flags & (SWP_NOMOVE | SWP_NOSIZE)) != (SWP_NOMOVE | SWP_NOSIZE);
+    if (moving || msg == WM_ENTERSIZEMOVE ||
+        (msg == WM_ACTIVATE && LOWORD(wp) == WA_INACTIVE) ||
+        (msg == WM_SHOWWINDOW && !wp) || (msg == WM_ENABLE && !wp)) closeMenu(s, false);
+    if (msg == WM_NCDESTROY) {
+        closeMenu(s, false, false);
+        s.owner = nullptr;
+        RemoveWindowSubclass(hwnd, ownerProc, id);
+    }
+    return DefSubclassProc(hwnd, msg, wp, lp);
+}
+
+int menuHit(const State& s, LPARAM point) {
+    POINT p{GET_X_LPARAM(point), GET_Y_LPARAM(point)};
+    MapWindowPoints(s.popup, s.list, &p, 1);
+    const LRESULT hit = SendMessageW(s.list, LB_ITEMFROMPOINT, 0, MAKELPARAM(p.x, p.y));
+    return HIWORD(hit) ? -1 : LOWORD(hit);
+}
+
+LRESULT CALLBACK menuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    auto* s = reinterpret_cast<State*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    if (msg == WM_NCCREATE) {
+        s = reinterpret_cast<State*>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)s);
+    }
+    if (!s) return DefWindowProcW(hwnd, msg, wp, lp);
+    switch (msg) {
+    case WM_MOUSEACTIVATE: return MA_NOACTIVATE;
+    case WM_ERASEBKGND: return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT ps{};
+        const HDC dc = BeginPaint(hwnd, &ps);
+        RECT r{}; GetClientRect(hwnd, &r);
+        const auto t = s->theme(s->root);
+        fill(dc, r, ui::palette(t.dark, t.highContrast).surface);
+        const auto c = colors(t, true);
+        HBRUSH border = CreateSolidBrush(c.border);
+        FrameRect(dc, &r, border);
+        DeleteObject(border);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_MEASUREITEM:
+        reinterpret_cast<MEASUREITEMSTRUCT*>(lp)->itemHeight = scale(s->root, MenuItemHeight);
+        return TRUE;
+    case WM_DRAWITEM: {
+        auto item = *reinterpret_cast<DRAWITEMSTRUCT*>(lp);
+        item.CtlType = ODT_COMBOBOX;
+        item.hwndItem = s->root;
+        return drawItem(item);
+    }
+    case WM_CTLCOLORLISTBOX: {
+        const auto t = s->theme(s->root);
+        SetBkColor((HDC)wp, ui::palette(t.dark, t.highContrast).surface);
+        return (LRESULT)menuBrush(t);
+    }
+    case WM_MOUSEMOVE: {
+        const int hit = menuHit(*s, lp);
+        if (hit >= 0 && hit != SendMessageW(s->list, LB_GETCURSEL, 0, 0)) {
+            SendMessageW(s->list, LB_SETCURSEL, hit, 0);
+            InvalidateRect(s->list, nullptr, FALSE);
+        }
+        return 0;
+    }
+    case WM_LBUTTONDOWN:
+    case WM_RBUTTONDOWN:
+        if (menuHit(*s, lp) < 0) closeMenu(*s, false);
+        return 0;
+    case WM_LBUTTONUP: {
+        const int hit = menuHit(*s, lp);
+        if (hit >= 0) {
+            SendMessageW(s->list, LB_SETCURSEL, hit, 0);
+            closeMenu(*s, true);
+        }
+        return 0;
+    }
+    case WM_MOUSEWHEEL: {
+        s->wheelDelta += GET_WHEEL_DELTA_WPARAM(wp);
+        const int steps = s->wheelDelta / WHEEL_DELTA;
+        s->wheelDelta %= WHEEL_DELTA;
+        const int top = (int)SendMessageW(s->list, LB_GETTOPINDEX, 0, 0);
+        SendMessageW(s->list, LB_SETTOPINDEX, std::max(0, top - steps * 3), 0);
+        return 0;
+    }
+    case WM_CAPTURECHANGED:
+        if (s->popup == hwnd && (HWND)lp != hwnd) closeMenu(*s, false);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+void openMenu(State& s) {
+    if (s.popup || !IsWindowEnabled(s.root)) return;
+    const int count = (int)SendMessageW(s.root, CB_GETCOUNT, 0, 0);
+    if (count <= 0) return;
+    notify(s.root, CBN_DROPDOWN);
+    WNDCLASSW wc{};
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = kMenuClass;
+    wc.lpfnWndProc = menuProc;
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    RegisterClassW(&wc);
+    RECT anchor{}; GetWindowRect(s.root, &anchor);
+    MONITORINFO monitor{sizeof(monitor)};
+    GetMonitorInfoW(MonitorFromWindow(s.root, MONITOR_DEFAULTTONEAREST), &monitor);
+    const int gap = scale(s.root, 2), edge = scale(s.root, 1);
+    const int row = scale(s.root, MenuItemHeight);
+    const int below = monitor.rcWork.bottom - anchor.bottom - gap;
+    const int above = anchor.top - monitor.rcWork.top - gap;
+    const bool upwards = below < std::min(count, 10) * row + edge * 2 && above > below;
+    const int rows = std::max(1, std::min({count, 10, ((upwards ? above : below) - edge * 2) / row}));
+    const int height = rows * row + edge * 2;
+    const int width = std::min((int)(anchor.right - anchor.left), (int)(monitor.rcWork.right - monitor.rcWork.left));
+    const int x = std::clamp((int)anchor.left, (int)monitor.rcWork.left, (int)monitor.rcWork.right - width);
+    s.popup = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kMenuClass, L"",
+        WS_POPUP | WS_CLIPCHILDREN, x, upwards ? anchor.top - gap - height : anchor.bottom + gap,
+        width, height, s.root, nullptr, wc.hInstance, &s);
+    if (!s.popup) return;
+    s.list = CreateWindowExW(0, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | LBS_OWNERDRAWFIXED |
+        LBS_HASSTRINGS | LBS_NOINTEGRALHEIGHT, edge, edge, width - edge * 2, height - edge * 2,
+        s.popup, (HMENU)1, wc.hInstance, nullptr);
+    if (!s.list) { closeMenu(s, false); return; }
+    SetWindowTheme(s.list, L"", L"");
+    SendMessageW(s.list, WM_SETFONT, SendMessageW(s.root, WM_GETFONT, 0, 0), FALSE);
+    SendMessageW(s.list, LB_SETITEMHEIGHT, 0, row);
+    for (int i = 0; i < count; ++i) {
+        const auto value = itemText(s.root, i);
+        SendMessageW(s.list, LB_ADDSTRING, 0, (LPARAM)value.c_str());
+    }
+    SendMessageW(s.list, LB_SETCURSEL, SendMessageW(s.root, CB_GETCURSEL, 0, 0), 0);
+    s.wheelDelta = 0;
+    const DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUNDSMALL;
+    DwmSetWindowAttribute(s.popup, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
+    // No AnimateWindow and no process/system-wide animation preference change.
+    SetWindowPos(s.popup, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    RedrawWindow(s.popup, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+    SetCapture(s.popup);
+    invalidate(s.root);
+}
+
+bool menuKey(State& s, UINT msg, WPARAM key) {
+    if (!s.popup) return false;
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) {
+        if (key == VK_ESCAPE || key == VK_F4) { closeMenu(s, false); return true; }
+        if (key == VK_RETURN) { closeMenu(s, true); return true; }
+        if (key == VK_TAB) { closeMenu(s, false); return false; }
+        if (key == VK_UP || key == VK_DOWN || key == VK_HOME || key == VK_END ||
+            key == VK_PRIOR || key == VK_NEXT) {
+            SendMessageW(s.list, WM_KEYDOWN, key, 0);
+            return true;
+        }
+    }
+    if (msg == WM_CHAR) {
+        if (key >= L' ') SendMessageW(s.list, WM_CHAR, key, 0);
+        return key != VK_TAB;
+    }
+    return false;
+}
+
 void paintField(HWND hwnd, HDC target, const State& s) {
     RECT r{};
     GetClientRect(hwnd, &r);
@@ -206,10 +401,31 @@ void track(HWND hwnd, State& s) {
 LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR ref) {
     auto& s = *reinterpret_cast<State*>(ref);
     if (msg == WM_NCDESTROY) {
+        closeMenu(s, false, false);
+        if (s.owner) RemoveWindowSubclass(s.owner, ownerProc, (UINT_PTR)&s);
         const LRESULT result = DefSubclassProc(hwnd, msg, wp, lp);
         RemoveWindowSubclass(hwnd, proc, kSubclass);
         delete &s;
         return result;
+    }
+    if (s.kind == Kind::Combo || s.kind == Kind::Editor) {
+        State* combo = s.kind == Kind::Combo ? &s : state(s.root);
+        if (combo) {
+            if (msg == WM_GETDLGCODE && combo->popup && wp != VK_TAB)
+                return DLGC_WANTARROWS | DLGC_WANTCHARS | DLGC_WANTMESSAGE;
+            if (s.kind == Kind::Editor && msg == WM_CHAR && wp >= L' ')
+                closeMenu(*combo, false); // typing still edits a custom model name
+            if (s.kind == Kind::Editor && msg == WM_IME_STARTCOMPOSITION) closeMenu(*combo, false);
+            if (menuKey(*combo, msg, wp)) return 0;
+            if (msg == WM_KILLFOCUS && (HWND)wp != s.root && !IsChild(s.root, (HWND)wp))
+                closeMenu(*combo, false);
+            if (msg == WM_MOUSEWHEEL && combo->popup)
+                return SendMessageW(combo->popup, msg, wp, lp);
+            if ((msg == WM_KEYDOWN && wp == VK_F4) ||
+                (msg == WM_SYSKEYDOWN && (wp == VK_DOWN || wp == VK_UP))) {
+                openMenu(*combo); return 0;
+            }
+        }
     }
     if (msg == WM_MOUSEMOVE) track(hwnd, s);
     if (msg == WM_MOUSELEAVE) { s.hover = false; invalidate(s.root); }
@@ -237,6 +453,31 @@ LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD
         if (msg == WM_PRINTCLIENT) { paintField(hwnd, (HDC)wp, s); return 0; }
     }
     if (s.kind == Kind::Combo) {
+        if (msg == CB_GETDROPPEDSTATE) return s.popup != nullptr;
+        if (msg == CB_SHOWDROPDOWN) {
+            if (wp) openMenu(s); else closeMenu(s, false);
+            return 0;
+        }
+        if (msg == CB_GETDROPPEDCONTROLRECT && s.popup) {
+            GetWindowRect(s.popup, reinterpret_cast<RECT*>(lp)); return TRUE;
+        }
+        if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONDBLCLK) {
+            SetFocus(hwnd);
+            if (s.popup) closeMenu(s, false); else openMenu(s);
+            return 0;
+        }
+        if (msg == WM_LBUTTONUP) return 0;
+        if (msg == WM_CHAR && wp == L' ' &&
+            (GetWindowLongPtrW(hwnd, GWL_STYLE) & CBS_DROPDOWNLIST) == CBS_DROPDOWNLIST) {
+            openMenu(s); return 0;
+        }
+        if (msg == CB_RESETCONTENT || msg == CB_DELETESTRING || msg == CB_ADDSTRING ||
+            msg == CB_INSERTSTRING || msg == WM_SHOWWINDOW || msg == WM_ENABLE ||
+            msg == WM_WINDOWPOSCHANGING) closeMenu(s, false);
+        if (msg == CB_SETCURSEL && s.popup) {
+            SendMessageW(s.list, LB_SETCURSEL, wp, 0);
+            InvalidateRect(s.list, nullptr, FALSE);
+        }
         if (msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORSTATIC)
             if (HBRUSH brush = colorControl((HWND)lp, (HDC)wp)) return (LRESULT)brush;
         if (msg == WM_CTLCOLORLISTBOX) {
@@ -279,6 +520,10 @@ void attachEdit(HWND edit, ThemeProvider theme) {
 void attachCombo(HWND combo, ThemeProvider theme) {
     SetWindowLongPtrW(combo, GWL_STYLE, GetWindowLongPtrW(combo, GWL_STYLE) | WS_CLIPCHILDREN);
     attach(combo, Kind::Combo, combo, theme);
+    if (auto* s = state(combo)) {
+        s->owner = GetAncestor(combo, GA_ROOT);
+        if (!SetWindowSubclass(s->owner, ownerProc, (UINT_PTR)s, (DWORD_PTR)s)) s->owner = nullptr;
+    }
     COMBOBOXINFO info{sizeof(info)};
     if (GetComboBoxInfo(combo, &info)) {
         wchar_t cls[32]{};

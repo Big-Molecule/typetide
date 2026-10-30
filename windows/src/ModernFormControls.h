@@ -22,6 +22,8 @@ using TextProvider = std::wstring (*)(HWND);
 // these during creation, so removing them afterwards can leave a second frame.
 void attachEdit(HWND edit, ThemeProvider theme);
 // Create combos with CBS_OWNERDRAWFIXED | CBS_HASSTRINGS before attaching.
+// The menu is an instant, scrollbar-free native list popup. Hover/arrow keys
+// preview a candidate; only a click or Enter commits it to the combo's value.
 void attachCombo(HWND combo, ThemeProvider theme);
 void attachHotkey(HWND hotkey, ThemeProvider theme, TextProvider text);
 void refresh(HWND control);

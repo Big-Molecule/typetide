@@ -18,12 +18,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Big-Molecule"
             VALUE "FileDescription", "TypeTide - system-wide AI translation & inline rewrite"
-            VALUE "FileVersion", "0.1.21"
+            VALUE "FileVersion", "0.2.0"
             VALUE "InternalName", "TypeTide"
             VALUE "LegalCopyright", "MIT License"
             VALUE "OriginalFilename", "TypeTide.exe"
             VALUE "ProductName", "TypeTide"
-            VALUE "ProductVersion", "0.1.21"
+            VALUE "ProductVersion", "0.2.0"
         END
     END
     BLOCK "VarFileInfo"

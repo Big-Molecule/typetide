@@ -1,5 +1,5 @@
 <h1 align="center">TypeTide</h1>
-<p align="center"><b>Type in your language. Rewrite in place — in any app on Windows.</b></p>
+<p align="center"><b>A clean, lightweight selection translator — read foreign text with one keystroke, rewrite your own in place.</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10+-0078d4.svg" />
@@ -12,8 +12,6 @@
   <a href="https://github.com/Big-Molecule/typetide"><b>GitHub</b></a> ·
   <b>English</b> · <a href="README.zh-CN.md">简体中文</a>
 </p>
-
-> Windows-focused fork of [everettjf/typetide](https://github.com/everettjf/typetide). This fork continues development on the Windows client only; see [differences from upstream](#-differences-from-upstream).
 
 TypeTide turns translation into an in-place system action. It lives in the system tray and works in **any** app:
 
@@ -139,9 +137,9 @@ windows/               # Native Win32 C++20 app (CMake)
 ├── scripts/           # Build / test / mock-backend scripts
 └── assets/            # Icon
 
-contracts/             # Shared translation behavior contracts
+contracts/             # Translation behavior contracts (used by self-tests)
 scripts/               # Version bump + release scripts
-docs/                  # Screenshots + notes
+docs/                  # Screenshots
 ```
 
 ## 🔨 Build & release
@@ -172,20 +170,10 @@ Requires `gh auth login` once.
 - **Misaligned popup in some apps** → those apps don't expose text bounds; the popup falls back to the cursor position.
 - **Which language goes where?** → In **Settings → Language**, pick your **native** and **foreign** language (there is no "source/target" pair to get backwards). Each shortcut has its own direction; **auto** detects the selected text and translates the other way.
 
-## 🪟 Differences from upstream
-
-This fork tracks the Windows client of [everettjf/typetide](https://github.com/everettjf/typetide) and drops the macOS app:
-
-- **Windows only** — the SwiftUI/`macos/` tree is removed; Windows is the sole supported platform.
-- **Plain-HTTP OpenAI-compatible endpoints allowed** — upstream refuses to send API keys over anything but HTTPS or loopback; this fork lets you point at LAN services over HTTP (unencrypted — use only on trusted networks).
-- **Fetch models** — pull the model list from an OpenAI-compatible endpoint's `/models` and pick from a dropdown; hand-typed model names still work.
-- **Streaming UI reworked** — input hooks run on a dedicated thread so rendering can never stall the system mouse; translation deltas are batched at ~30 fps instead of one message per token.
-- **Update check points at this fork** (`TYPETIDE_UPDATE_REPO` build option), and About links to this repository.
-
 ## 🤝 Contributing
 
 Issues and PRs welcome. The maintained README languages are English and Simplified Chinese.
 
 ## 📄 License
 
-[MIT](LICENSE) · Based on TypeTide by [everettjf](https://github.com/everettjf). If TypeTide helps you, a ⭐️ is appreciated!
+[MIT](LICENSE)

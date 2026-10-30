@@ -1,5 +1,5 @@
 <h1 align="center">TypeTide</h1>
-<p align="center"><b>用你的语言输入，在 Windows 的任何应用里原地改写。</b></p>
+<p align="center"><b>纯净精简的划词翻译 —— 选中外文一键读懂，用母语输入一键改写。</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10+-0078d4.svg" />
@@ -10,10 +10,8 @@
 
 <p align="center">
   <a href="https://github.com/Big-Molecule/typetide"><b>GitHub</b></a> ·
-  <a href="README.md">English</a> · <b>简体中文</b>
+  <b>English</b> · <a href="README.zh-CN.md">简体中文</a>
 </p>
-
-> 本仓库是 [everettjf/typetide](https://github.com/everettjf/typetide) 的 Windows 分支，只继续推进 Windows 端开发；与上游的差异见[与上游的差异](#-与上游的差异)。
 
 TypeTide 把翻译变成一个原地完成的系统动作。它常驻系统托盘，在**任何**应用里都能用：
 
@@ -139,9 +137,9 @@ windows/               # 原生 Win32 C++20 应用（CMake）
 ├── scripts/           # 构建 / 测试 / mock 后端脚本
 └── assets/            # 图标
 
-contracts/             # 双平台共享的翻译行为约定
+contracts/             # 翻译行为约定（自检用）
 scripts/               # 版本递增 + 发布脚本
-docs/                  # 截图与说明
+docs/                  # 截图
 ```
 
 ## 🔨 构建与发布
@@ -172,20 +170,10 @@ cmake --build build             # → build/TypeTide.exe
 - **某些应用里弹窗位置不准** → 这些应用不暴露文字边界；弹窗会退回到光标位置。
 - **哪个语言填哪里？** → 在**设置 → Language** 里选你的**母语**和**外语**（没有容易搞反的"源/目标"概念）。每个快捷键有自己的方向；**自动**会检测选中文字的语言并翻译成另一种。
 
-## 🪟 与上游的差异
-
-本分支只保留 [everettjf/typetide](https://github.com/everettjf/typetide) 的 Windows 客户端并继续推进：
-
-- **仅 Windows** — 移除了 SwiftUI 的 `macos/` 目录，Windows 是唯一支持平台。
-- **允许明文 HTTP 的 OpenAI 兼容端点** — 上游只允许 HTTPS 或回环地址发送 API key；本分支允许指向局域网 HTTP 服务（不加密，请只在可信网络使用）。
-- **拉取模型列表** — 从 OpenAI 兼容端点的 `/models` 拉取模型下拉可选，手输模型名仍然可用。
-- **流式 UI 重做** — 输入钩子移到独立线程，渲染再忙也不会卡住系统鼠标；翻译增量按约 30fps 批量刷新，不再每个 token 发一条消息。
-- **更新检查指向本 fork**（`TYPETIDE_UPDATE_REPO` 构建选项），关于页链接也指向本仓库。
-
 ## 🤝 参与贡献
 
 欢迎提 Issue 和 PR。目前持续维护英文和简体中文 README。
 
 ## 📄 许可证
 
-[MIT](LICENSE) · 基于 [everettjf](https://github.com/everettjf) 的 TypeTide。如果 TypeTide 帮到了你，点个 ⭐️ 就是最好的支持！
+[MIT](LICENSE)

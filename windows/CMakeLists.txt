@@ -26,6 +26,7 @@ add_executable(TypeTide WIN32
     src/SelectionMonitor.cpp
     src/TrayIcon.cpp
     src/SettingsWindow.cpp
+    src/ModernFormControls.cpp
     src/LaunchAtLogin.cpp
     src/UpdateChecker.cpp
     src/SelfTest.cpp
@@ -61,4 +62,12 @@ if(BUILD_TESTING)
     target_compile_definitions(SettingsLayoutTest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(SettingsLayoutTest PRIVATE user32)
     add_test(NAME settings-layout COMMAND SettingsLayoutTest)
+    add_executable(ModernFormControlsTest tests/modern-form-controls.cpp src/ModernFormControls.cpp)
+    target_include_directories(ModernFormControlsTest PRIVATE src)
+    target_compile_definitions(ModernFormControlsTest PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+    if(MSVC)
+        target_compile_options(ModernFormControlsTest PRIVATE /W4 /utf-8 /EHsc)
+    endif()
+    target_link_libraries(ModernFormControlsTest PRIVATE user32 gdi32 comctl32 dwmapi uxtheme)
+    add_test(NAME modern-form-controls COMMAND ModernFormControlsTest)
 endif()

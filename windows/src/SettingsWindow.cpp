@@ -1,5 +1,6 @@
 #include "SettingsWindow.h"
 #include "SettingsLayout.h"
+#include "ModernFormControls.h"
 #include "App.h"
 #include "LaunchAtLogin.h"
 #include "LocalDiagnostics.h"
@@ -86,7 +87,6 @@ struct State {
 };
 
 State g;
-WNDPROC gHotkeyWndProc = nullptr;
 
 HWND ctrl(int id);
 
@@ -112,6 +112,11 @@ bool inBackendCard(HWND control) {
 HBRUSH controlBackground(HWND control) {
     if (g.highContrast) return GetSysColorBrush(COLOR_WINDOW);
     return inBackendCard(control) ? editBrush() : pageBrush();
+}
+
+form::Theme formTheme(HWND control) {
+    return {g.dark, g.highContrast,
+            inBackendCard(control) ? ui::palette(g.dark, g.highContrast).surface : pageBg()};
 }
 
 // ---------- Win11 风格按钮自绘 ----------
@@ -254,38 +259,16 @@ LRESULT drawStyledButton(NMCUSTOMDRAW* draw) {
     return CDRF_SKIPDEFAULT;
 }
 
-LRESULT CALLBACK hotkeyWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-    if (g.dark && msg == WM_PAINT) {
-        PAINTSTRUCT ps{};
-        HDC dc = BeginPaint(hwnd, &ps);
-        RECT rc{};
-        GetClientRect(hwnd, &rc);
-        FillRect(dc, &rc, editBrush());
-        HBRUSH border = CreateSolidBrush(GetFocus() == hwnd ? ui::Accent : RGB(0x58, 0x58, 0x5E));
-        FrameRect(dc, &rc, border);
-        DeleteObject(border);
-        const WORD encoded = (WORD)SendMessageW(hwnd, HKM_GETHOTKEY, 0, 0);
-        Hotkey hotkey{};
-        hotkey.vk = LOBYTE(encoded);
-        hotkey.modifiers = 0;
-        const BYTE flags = HIBYTE(encoded);
-        if (flags & HOTKEYF_CONTROL) hotkey.modifiers |= MOD_CONTROL;
-        if (flags & HOTKEYF_SHIFT) hotkey.modifiers |= MOD_SHIFT;
-        if (flags & HOTKEYF_ALT) hotkey.modifiers |= MOD_ALT;
-        const std::wstring value = hotkey.vk ? hotkey.displayString() : L"None";
-        SetBkMode(dc, TRANSPARENT);
-        SetTextColor(dc, textColor());
-        HFONT oldFont = (HFONT)SelectObject(dc, g.font);
-        RECT textRect = rc;
-        textRect.left += px(5);
-        DrawTextW(dc, value.c_str(), -1, &textRect,
-                  DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
-        SelectObject(dc, oldFont);
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    if (g.dark && msg == WM_ERASEBKGND) return 1;
-    return CallWindowProcW(gHotkeyWndProc, hwnd, msg, wp, lp);
+std::wstring hotkeyText(HWND hwnd) {
+    const WORD encoded = (WORD)SendMessageW(hwnd, HKM_GETHOTKEY, 0, 0);
+    Hotkey hotkey{};
+    hotkey.vk = LOBYTE(encoded);
+    hotkey.modifiers = 0;
+    const BYTE flags = HIBYTE(encoded);
+    if (flags & HOTKEYF_CONTROL) hotkey.modifiers |= MOD_CONTROL;
+    if (flags & HOTKEYF_SHIFT) hotkey.modifiers |= MOD_SHIFT;
+    if (flags & HOTKEYF_ALT) hotkey.modifiers |= MOD_ALT;
+    return hotkey.vk ? hotkey.displayString() : L"None";
 }
 
 bool systemUsesDarkMode() {
@@ -367,6 +350,7 @@ void applyTheme(HWND hwnd) {
         else
             SetWindowTheme(child, darkMode ? (needsCfd ? L"DarkMode_CFD" : L"DarkMode_Explorer")
                                            : L"Explorer", nullptr);
+        form::refresh(child);
         return TRUE;
     }, (LPARAM)g.dark);
     RedrawWindow(hwnd, nullptr, nullptr,
@@ -496,14 +480,16 @@ void applyToApp() {
 
 HWND make(const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h,
           int id, DWORD exStyle = 0) {
+    if (_wcsicmp(cls, L"COMBOBOX") == 0) style |= CBS_OWNERDRAWFIXED | CBS_HASSTRINGS;
+    // EDIT caches its border during WM_NCCREATE; remove it before creation,
+    // not just when attaching the rounded non-client frame.
+    if (_wcsicmp(cls, L"EDIT") == 0) style &= ~WS_BORDER;
     HWND c = CreateWindowExW(exStyle, cls, text, WS_CHILD | style, px(x), px(y), px(w), px(h),
                              g.hwnd, (HMENU)(INT_PTR)id, GetModuleHandleW(nullptr), nullptr);
-    if (_wcsicmp(cls, HOTKEY_CLASSW) == 0) {
-        WNDPROC original = reinterpret_cast<WNDPROC>(
-            SetWindowLongPtrW(c, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(hotkeyWndProc)));
-        if (!gHotkeyWndProc) gHotkeyWndProc = original;
-    }
     SendMessageW(c, WM_SETFONT, (WPARAM)g.font, TRUE);
+    if (_wcsicmp(cls, L"EDIT") == 0) form::attachEdit(c, formTheme);
+    if (_wcsicmp(cls, L"COMBOBOX") == 0) form::attachCombo(c, formTheme);
+    if (_wcsicmp(cls, HOTKEY_CLASSW) == 0) form::attachHotkey(c, formTheme, hotkeyText);
     return c;
 }
 
@@ -536,7 +522,7 @@ struct RowBuilder {
     }
     RowBuilder& combo(int id, int width = 0, bool editable = false) {
         return control(L"COMBOBOX", L"", WS_TABSTOP | WS_VSCROLL |
-                       (editable ? CBS_DROPDOWN : CBS_DROPDOWNLIST), width, 26, id,
+                       (editable ? CBS_DROPDOWN : CBS_DROPDOWNLIST), width, form::Height, id,
                        width == 0, 240);
     }
     RowBuilder& button(const wchar_t* text, int width, int id) {
@@ -735,10 +721,10 @@ void buildPages() {
         g.layouts[1].cardLast = 3;
         page.row(16, 20).label(L"Provider", 100, kOaiProviderLabel).combo(kOaiProvider, 260);
         page.row(16, 20).label(L"Base URL", 100, kOaiUrlLabel)
-            .control(L"EDIT", L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 0, 32, kOaiUrl);
+            .control(L"EDIT", L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 0, form::Height, kOaiUrl);
         page.row(16, 20).label(L"API key", 100, kOaiKeyLabel)
             .control(L"EDIT", L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD,
-                     0, 32, kOaiKey);
+                     0, form::Height, kOaiKey);
         page.row(40, 20).label(L"API model", 100, kOaiModelLabel).combo(kOaiModel, 0, true)
             .button(L"Fetch models", 110, kOaiFetch);
         page.row(8).label(L"Type a model name, or fetch the list from the endpoint. "
@@ -776,10 +762,10 @@ void buildPages() {
     {
         PageBuilder page{3};
         page.row().label(L"Translate selection (read):", 180, kHkReadLabel)
-            .control(HOTKEY_CLASSW, L"", WS_TABSTOP, 140, 30, kHkRead, true)
+            .control(HOTKEY_CLASSW, L"", WS_TABSTOP, 140, form::Height, kHkRead, true)
             .checkbox(L"Win key", 80, kReadWin).button(L"Clear", 64, kHkReadClear);
         page.row(24).label(L"Rewrite && replace (write):", 180, kHkRewriteLabel)
-            .control(HOTKEY_CLASSW, L"", WS_TABSTOP, 140, 30, kHkRewrite, true)
+            .control(HOTKEY_CLASSW, L"", WS_TABSTOP, 140, form::Height, kHkRewrite, true)
             .checkbox(L"Win key", 80, kRewriteWin).button(L"Clear", 64, kHkRewriteClear);
         page.row().label(L"Translate action:", 180, kReadActionLabel).combo(kReadAction);
         page.row(24).label(L"Rewrite action:", 180, kRewriteActionLabel).combo(kRewriteAction);
@@ -819,7 +805,7 @@ void buildPages() {
     {
         PageBuilder page{5};
         page.row(12).control(L"EDIT", L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-                             0, 32, kSkipEdit).button(L"Add", 80, kSkipAdd);
+                             0, form::Height, kSkipEdit).button(L"Add", 80, kSkipAdd);
         page.row(16).control(L"LISTBOX", L"", WS_TABSTOP | WS_BORDER | WS_VSCROLL |
                              LBS_NOTIFY | LBS_NOINTEGRALHEIGHT, 0, 240, kSkipList, true, 0, true)
             .button(L"Remove", 80, kSkipRemove);
@@ -1300,8 +1286,17 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         break;
     }
+    case WM_MEASUREITEM: {
+        auto* item = reinterpret_cast<MEASUREITEMSTRUCT*>(lp);
+        if (item->CtlType == ODT_COMBOBOX) {
+            item->itemHeight = px(form::MenuItemHeight);
+            return TRUE;
+        }
+        break;
+    }
     case WM_DRAWITEM: {
         auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
+        if (form::drawItem(*item)) return TRUE;
         if (item->CtlID != kTab || item->itemID == (UINT)-1) break;
         const bool selected = (item->itemState & ODS_SELECTED) != 0;
         HBRUSH bg = CreateSolidBrush(selected ? (g.dark ? RGB(0x3A, 0x31, 0x59) : RGB(0xE4, 0xDF, 0xFF)) : navBg());
@@ -1329,6 +1324,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return TRUE;
     }
     case WM_CTLCOLORSTATIC: {
+        if (HBRUSH brush = form::colorControl((HWND)lp, (HDC)wp)) return (LRESULT)brush;
         wchar_t cls[32]{};
         GetClassNameW((HWND)lp, cls, (int)std::size(cls));
         if (_wcsicmp(cls, L"Edit") == 0) {
@@ -1341,6 +1337,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return (LRESULT)controlBackground((HWND)lp);
     }
     case WM_CTLCOLOREDIT: {
+        if (HBRUSH brush = form::colorControl((HWND)lp, (HDC)wp)) return (LRESULT)brush;
         SetBkColor((HDC)wp, g.dark ? RGB(0x2B, 0x2B, 0x2E) : RGB(0xFF, 0xFF, 0xFF));
         SetTextColor((HDC)wp, textColor());
         return (LRESULT)editBrush();

@@ -5,6 +5,7 @@
 #pragma once
 #include <windows.h>
 #include "Language.h"
+#include "PopupLoadingText.h"
 #include <functional>
 #include <string>
 #include <optional>
@@ -19,7 +20,7 @@ public:
     void show(const std::wstring& original, Language target, RECT anchor, bool showReplace);
 
     void appendDelta(const std::wstring& delta);
-    /// 流结束：完成最后一次潮汐扫过；空结果由 App 转成错误。
+    /// 流结束；空结果由 App 转成错误。
     void finishTranslation();
     void setError(const std::wstring& error);
     void setTarget(Language target);
@@ -59,6 +60,7 @@ private:
     void installDismissMonitors();
     void removeDismissMonitors();
     void updateFonts();
+    void updateLoadingAnimation();
 
     HWND hwnd_ = nullptr;
     RECT anchor_{};
@@ -75,11 +77,11 @@ private:
     Language target_ = Language::English;
     std::optional<Language> source_;
     bool copiedFlash_ = false;
-    enum class TidePhase { Waiting, Flowing, Settling, Complete, Failed };
-    TidePhase tidePhase_ = TidePhase::Waiting;
+    enum class Phase { Waiting, Flowing, Complete, Failed };
+    Phase phase_ = Phase::Waiting;
     bool animationsEnabled_ = true;
-    unsigned tideTick_ = 0;
-    unsigned settleTicks_ = 0;
+    ULONGLONG loadingStarted_ = 0;
+    popup::LoadingText loadingText_;
     int width_ = 420;
     int textHeight_ = 0;
     int viewportHeight_ = 0;

@@ -7,13 +7,12 @@
 #include <dwmapi.h>
 #include <windowsx.h>
 #include <algorithm>
-#include <cmath>
 
 namespace {
 
 constexpr wchar_t kClassName[] = L"TypeTidePopup";
 constexpr UINT_PTR kCopiedTimer = 1;
-constexpr UINT_PTR kTideTimer = 2;
+constexpr UINT_PTR kLoadingTimer = 2;
 
 bool systemPrefersDark() {
     DWORD v = 1, size = sizeof(v);
@@ -49,11 +48,8 @@ void PopupWindow::show(const std::wstring& original, Language target, RECT ancho
     error_.clear();
     loading_ = true;
     copiedFlash_ = false;
-    tidePhase_ = TidePhase::Waiting;
-    tideTick_ = settleTicks_ = 0;
-    BOOL clientAnimations = TRUE;
-    SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &clientAnimations, 0);
-    animationsEnabled_ = clientAnimations == TRUE;
+    phase_ = Phase::Waiting;
+    loadingStarted_ = GetTickCount64();
     scrollY_ = 0;
     target_ = target;
     source_.reset();
@@ -94,15 +90,14 @@ void PopupWindow::show(const std::wstring& original, Language target, RECT ancho
     placedAbove_ = false;
     layoutAndResize();
     ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
-    // Match macOS: full motion gets the particle tide; reduced-motion mode
-    // still gets a low-motion activity indicator instead of static text.
-    SetTimer(hwnd_, kTideTimer, animationsEnabled_ ? 33 : 160, nullptr);
+    updateLoadingAnimation();
     installDismissMonitors();
 }
 
 void PopupWindow::close() {
     if (!hwnd_) return;
-    KillTimer(hwnd_, kTideTimer);
+    KillTimer(hwnd_, kLoadingTimer);
+    loadingText_.clear();
     removeDismissMonitors();
     HWND h = hwnd_;
     hwnd_ = nullptr;
@@ -111,10 +106,12 @@ void PopupWindow::close() {
 }
 
 void PopupWindow::appendDelta(const std::wstring& delta) {
-    if (!hwnd_) return;
+    if (!hwnd_ || delta.empty()) return;
     translation_ += delta;
     loading_ = false;
-    tidePhase_ = TidePhase::Flowing;
+    phase_ = Phase::Flowing;
+    KillTimer(hwnd_, kLoadingTimer);
+    loadingText_.clear();
     // 每帧只测量正文并决定是否需要调整窗口；如果宽高都没变，
     // layoutAndResize 内部不会再调用 SetWindowPos。
     layoutAndResize();
@@ -124,14 +121,8 @@ void PopupWindow::appendDelta(const std::wstring& delta) {
 void PopupWindow::finishTranslation() {
     if (!hwnd_ || translation_.empty()) return;
     loading_ = false;
-    if (animationsEnabled_) {
-        tidePhase_ = TidePhase::Settling;
-        settleTicks_ = 0;
-        SetTimer(hwnd_, kTideTimer, 33, nullptr);
-    } else {
-        tidePhase_ = TidePhase::Complete;
-        KillTimer(hwnd_, kTideTimer);
-    }
+    phase_ = Phase::Complete;
+    KillTimer(hwnd_, kLoadingTimer);
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
@@ -139,8 +130,9 @@ void PopupWindow::setError(const std::wstring& error) {
     if (!hwnd_) return;
     error_ = error;
     loading_ = false;
-    tidePhase_ = TidePhase::Failed;
-    KillTimer(hwnd_, kTideTimer);
+    phase_ = Phase::Failed;
+    KillTimer(hwnd_, kLoadingTimer);
+    loadingText_.clear();
     layoutAndResize();
     InvalidateRect(hwnd_, nullptr, TRUE);
 }
@@ -161,14 +153,17 @@ void PopupWindow::resetForRetranslate() {
     translation_.clear();
     error_.clear();
     loading_ = true;
-    tidePhase_ = TidePhase::Waiting;
-    tideTick_ = settleTicks_ = 0;
-    SetTimer(hwnd_, kTideTimer, animationsEnabled_ ? 33 : 160, nullptr);
+    phase_ = Phase::Waiting;
+    loadingStarted_ = GetTickCount64();
+    scrollY_ = 0;
+    loadingText_.clear();
+    updateLoadingAnimation();
     layoutAndResize();
     InvalidateRect(hwnd_, nullptr, TRUE);
 }
 
 void PopupWindow::updateFonts() {
+    loadingText_.clear();
     if (fontHeader_) DeleteObject(fontHeader_);
     if (fontBody_) DeleteObject(fontBody_);
     if (fontSmall_) DeleteObject(fontSmall_);
@@ -180,6 +175,15 @@ void PopupWindow::updateFonts() {
     fontHeader_ = make(9, FW_SEMIBOLD);
     fontBody_ = make(11, FW_NORMAL);
     fontSmall_ = make(9, FW_NORMAL);
+}
+
+void PopupWindow::updateLoadingAnimation() {
+    BOOL enabled = TRUE;
+    SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0);
+    animationsEnabled_ = enabled == TRUE && !highContrast_;
+    KillTimer(hwnd_, kLoadingTimer);
+    if (phase_ == Phase::Waiting && animationsEnabled_)
+        SetTimer(hwnd_, kLoadingTimer, 33, nullptr);
 }
 
 void PopupWindow::layoutAndResize() {
@@ -206,7 +210,7 @@ void PopupWindow::layoutAndResize() {
                           : (translation_.empty() && loading_) ? original_
                           : translation_;
     RECT rc{0, 0, contentW, 0};
-    DrawTextW(dc, bodyText.c_str(), -1, &rc, DT_WORDBREAK | DT_CALCRECT);
+    DrawTextW(dc, bodyText.c_str(), -1, &rc, DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL | DT_CALCRECT);
     SelectObject(dc, old);
     ReleaseDC(hwnd_, dc);
     textHeight_ = rc.bottom > px(20) ? rc.bottom : px(20);
@@ -232,7 +236,7 @@ void PopupWindow::layoutAndResize() {
     int height = headerH + 1 + padY + textH + (hasButtons ? btnGap + btnH : 0) + padY;
     // 流式过程中按固定档位向上取整，避免每换一行就调整一次窗口；
     // 收尾时使用精确高度。
-    if (tidePhase_ == TidePhase::Flowing && height > lastHeight_) {
+    if (phase_ == Phase::Flowing && height > lastHeight_) {
         const int step = px(24);
         height = ((height + step - 1) / step) * step;
     }
@@ -361,9 +365,10 @@ void PopupWindow::paint(HDC dc) {
         std::wstring msg = L"⚠ " + error_;
         DrawTextW(dc, msg.c_str(), -1, &rcText, DT_WORDBREAK | DT_NOPREFIX);
     } else if (translation_.empty() && loading_) {
-        SetTextColor(dc, th.secondary);
-        DrawTextW(dc, original_.c_str(), -1, &rcText,
-                  DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL);
+        auto loadingPalette = th;
+        if (highContrast_) loadingPalette.secondary = th.text;
+        loadingText_.draw(dc, original_, fontBody_, rcText, clipText, dpi_, loadingPalette,
+                          animationsEnabled_, GetTickCount64() - loadingStarted_);
     } else {
         SetTextColor(dc, th.text);
         DrawTextW(dc, translation_.c_str(), -1, &rcText,
@@ -371,65 +376,6 @@ void PopupWindow::paint(HDC dc) {
     }
     RestoreDC(dc, saved);
 
-    // 点阵潮汐：等待/流式输出时循环，完成时快速扫过一次后停下。
-    const bool activityActive = tidePhase_ == TidePhase::Waiting ||
-        tidePhase_ == TidePhase::Flowing || tidePhase_ == TidePhase::Settling;
-    const bool tideActive = animationsEnabled_ && activityActive;
-    if (tideActive && clipText.right > clipText.left) {
-        saved = SaveDC(dc);
-        IntersectClipRect(dc, clipText.left, clipText.top, clipText.right, clipText.bottom);
-        const int span = std::max(1, static_cast<int>(clipText.right - clipText.left) + px(90));
-        const unsigned speed = tidePhase_ == TidePhase::Settling ? 11u : 4u;
-        const int frontier = clipText.left - px(22) + (int)((tideTick_ * speed) % (unsigned)span);
-        HPEN oldPen = (HPEN)SelectObject(dc, GetStockObject(NULL_PEN));
-        for (int i = 0; i < 32; ++i) {
-            const int row = i % 7;
-            const int trail = i / 7;
-            const int x = frontier - px(trail * 13) - px((row % 2) * 4);
-            const double wave = std::sin((double)tideTick_ * 0.14 + i * 0.72) * px(5);
-            const int y = clipText.top + row * std::max(1, static_cast<int>(clipText.bottom - clipText.top - px(5)) / 6)
-                          + (int)wave;
-            const int radius = px(1 + ((i * 7) % 3));
-            COLORREF color = highContrast_ ? th.text : (i % 3 == 0)
-                ? (dark_ ? RGB(0x39, 0xD9, 0xE8) : RGB(0x00, 0x9E, 0xC4))
-                : (dark_ ? RGB(0x98, 0x83, 0xFF) : RGB(0x6B, 0x4B, 0xE8));
-            HBRUSH dot = CreateSolidBrush(color);
-            HBRUSH old = (HBRUSH)SelectObject(dc, dot);
-            Ellipse(dc, x - radius, y - radius, x + radius + 1, y + radius + 1);
-            SelectObject(dc, old);
-            DeleteObject(dot);
-        }
-        SelectObject(dc, oldPen);
-        RestoreDC(dc, saved);
-    } else if (!animationsEnabled_ && activityActive) {
-        // Reduced-motion fallback. Windows can disable client-area animation
-        // for accessibility, remote sessions, or the global Animation effects
-        // switch. Keep the content stable, but show a gently stepping three-dot
-        // activity indicator like macOS's reduced-motion ProgressView.
-        SelectObject(dc, fontSmall_);
-        SetTextColor(dc, th.secondary);
-        RECT progress{clipText.left, clipText.bottom - px(18), clipText.right, clipText.bottom};
-        if (translation_.empty()) {
-            progress.right -= px(34);
-            DrawTextW(dc, L"Translating", -1, &progress,
-                      DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
-        }
-        const int activeDot = static_cast<int>((tideTick_ / 2) % 3);
-        const int dotY = progress.top + (progress.bottom - progress.top) / 2;
-        const int firstX = clipText.right - px(25);
-        HPEN oldPen = (HPEN)SelectObject(dc, GetStockObject(NULL_PEN));
-        for (int i = 0; i < 3; ++i) {
-            const COLORREF color = i == activeDot ? ui::Accent : th.buttonBorder;
-            HBRUSH dot = CreateSolidBrush(color);
-            HBRUSH old = (HBRUSH)SelectObject(dc, dot);
-            const int radius = px(i == activeDot ? 3 : 2);
-            const int x = firstX + px(i * 9);
-            Ellipse(dc, x - radius, dotY - radius, x + radius + 1, dotY + radius + 1);
-            SelectObject(dc, old);
-            DeleteObject(dot);
-        }
-        SelectObject(dc, oldPen);
-    }
     if (textHeight_ > viewportHeight_) {
         const int trackTop = headerH + 1 + padY;
         const int trackH = viewportHeight_;
@@ -648,13 +594,12 @@ LRESULT PopupWindow::handle(UINT msg, WPARAM wp, LPARAM lp) {
             KillTimer(hwnd_, kCopiedTimer);
             copiedFlash_ = false;
             if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
-        } else if (wp == kTideTimer) {
-            ++tideTick_;
-            if (tidePhase_ == TidePhase::Settling && ++settleTicks_ >= 15) {
-                tidePhase_ = TidePhase::Complete;
-                KillTimer(hwnd_, kTideTimer);
-            }
-            if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+        } else if (wp == kLoadingTimer && phase_ == Phase::Waiting && animationsEnabled_) {
+            auto px = [&](int v) { return MulDiv(v, (int)dpi_, 96); };
+            RECT body{px(ui::spacing::Large), px(36) + 1 + px(ui::spacing::Medium),
+                      width_ - px(ui::spacing::Large),
+                      px(36) + 1 + px(ui::spacing::Medium) + viewportHeight_};
+            InvalidateRect(hwnd_, &body, FALSE);
         }
         return 0;
     case WM_MOUSEWHEEL:
@@ -678,6 +623,13 @@ LRESULT PopupWindow::handle(UINT msg, WPARAM wp, LPARAM lp) {
         return (LRESULT)translation_.size();
     case WM_MOUSEACTIVATE:
         return MA_NOACTIVATE;
+    case WM_SETTINGCHANGE:
+    case WM_THEMECHANGED:
+        dark_ = systemPrefersDark();
+        highContrast_ = ui::highContrastEnabled();
+        updateLoadingAnimation();
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        return 0;
     case WM_DPICHANGED:
         dpi_ = HIWORD(wp);
         updateFonts();

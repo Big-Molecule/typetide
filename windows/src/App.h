@@ -9,6 +9,8 @@
 #include "TrayIcon.h"
 #include <optional>
 #include <string>
+#include <mutex>
+#include <atomic>
 
 enum class ShortcutAction;
 
@@ -91,4 +93,14 @@ private:
     bool rewriteShortcutRegistered_ = false;
     bool shortcutsReady_ = false;
     UINT taskbarCreatedMsg_ = 0;   // explorer 重启后重挂托盘图标
+
+    // 流式增量的合并缓冲：工作线程只追加文本并挂一条唤醒消息，
+    // 主线程一次取走全部，避免每个 token 都触发一次布局和重绘。
+    std::mutex pendingMutex_;
+    std::wstring pendingDelta_;
+    uint64_t pendingReqId_ = 0;   // 缓冲里文本属于哪个请求（受 pendingMutex_ 保护）
+    std::atomic<bool> pendingPosted_{false};
+    bool pacingStream_ = false;   // 节流定时器是否在跑（仅主线程访问）
+    void flushPendingDelta();
+    void discardPendingDelta();
 };

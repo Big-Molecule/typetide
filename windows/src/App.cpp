@@ -22,6 +22,8 @@ constexpr int kReadHotkeyId = 1;
 constexpr int kRewriteHotkeyId = 2;
 // 超过这个长度不翻译：LLM 又慢又贵，弹窗也展示不下
 constexpr size_t kMaxInputChars = 5000;
+// 流式增量刷新节流定时器：约 30fps，把短时间内的多个增量合并成一次布局和重绘
+constexpr UINT_PTR kDeltaTimerId = 1;
 } // namespace
 
 App& App::shared() {
@@ -50,6 +52,10 @@ bool App::init(HINSTANCE inst) {
     hwnd_ = CreateWindowExW(0, kAppWindowClass, L"TypeTide", 0, 0, 0, 0, 0,
                             nullptr, nullptr, inst, nullptr);
     if (!hwnd_) return false;
+
+    // 低级钩子装在独立线程；它的回调只把事件投递到这个窗口，
+    // 主线程再派发。避免主线程渲染时拖住全系统的鼠标输入。
+    hooks::SetDispatchWindow(hwnd_);
 
     tray_.onToggleEnabled = [this] {
         Settings& s = Settings::shared();
@@ -165,6 +171,7 @@ void App::quit() {
     SelectionMonitor::shared().stop();
     translator::CancelAll();
     tray_.remove();
+    hooks::Shutdown();
     // 直接结束进程：分离的工作线程（流式翻译/替换）不再有机会
     // 在静态对象析构后继续跑（那是退出崩溃的经典来源）。
     ExitProcess(0);
@@ -318,23 +325,74 @@ void App::configurePopupCallbacks() {
         p.resetForRetranslate();
         startStream(currentText_, source, p.target(), currentStyle_);
     };
-    popup.onClosed = [this] { translator::Cancel(currentReq_); };
+    popup.onClosed = [this] {
+        translator::Cancel(currentReq_);
+        if (pacingStream_) {
+            pacingStream_ = false;
+            KillTimer(hwnd_, kDeltaTimerId);
+        }
+        discardPendingDelta();
+    };
 }
 
 void App::startStream(const std::wstring& text, std::optional<Language> from, Language to, RewriteStyle style) {
     HWND hwnd = hwnd_;
+    discardPendingDelta();
     currentReq_ = translator::Stream(
         {text, from, to, style},
-        [hwnd](uint64_t id, const std::wstring& delta) {
-            auto* payload = new std::wstring(delta);
-            if (!PostMessageW(hwnd, WM_APP_TR_DELTA, (WPARAM)id, (LPARAM)payload))
-                delete payload;
+        [this, hwnd](uint64_t id, const std::wstring& delta) {
+            {
+                std::lock_guard lock(pendingMutex_);
+                pendingReqId_ = id;
+                pendingDelta_ += delta;
+            }
+            // 只挂一条唤醒消息；主线程收到后按 33ms 一帧刷新，
+            // 其余增量在这段时间里继续累加，不再单独唤醒。
+            if (!pendingPosted_.exchange(true)) {
+                if (!PostMessageW(hwnd, WM_APP_TR_DELTA, (WPARAM)id, 0)) {
+                    pendingPosted_.store(false);
+                    std::lock_guard lock(pendingMutex_);
+                    pendingDelta_.clear();
+                }
+            }
         },
         [hwnd](uint64_t id, bool ok, const std::wstring& error) {
             auto* payload = new DoneMsg{ok, error};
             if (!PostMessageW(hwnd, WM_APP_TR_DONE, (WPARAM)id, (LPARAM)payload))
                 delete payload;
         });
+}
+
+/// 主线程：把累积的增量一次交给弹窗（布局和重绘每帧最多一次）。
+void App::flushPendingDelta() {
+    std::wstring delta;
+    uint64_t id = 0;
+    {
+        std::lock_guard lock(pendingMutex_);
+        delta.swap(pendingDelta_);
+        id = pendingReqId_;
+        pendingPosted_.store(false);
+    }
+    // 没有新内容就停掉节流定时器，避免空闲时每 33ms 空转一次；
+    // 下一条增量会重新挂上唤醒消息并重启定时器。
+    if (delta.empty()) {
+        if (pacingStream_) {
+            pacingStream_ = false;
+            KillTimer(hwnd_, kDeltaTimerId);
+        }
+        return;
+    }
+    // 迟到的旧请求增量不能混进当前弹窗
+    if (id != currentReq_) return;
+    if (PopupWindow::shared().isVisible())
+        PopupWindow::shared().appendDelta(delta);
+}
+
+void App::discardPendingDelta() {
+    std::lock_guard lock(pendingMutex_);
+    pendingDelta_.clear();
+    pendingReqId_ = currentReq_;
+    pendingPosted_.store(false);
 }
 
 // ---------- 写·输入改写 ----------
@@ -455,23 +513,41 @@ LRESULT App::handle(UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
 
-    case WM_APP_TR_DELTA: {
-        auto* delta = (std::wstring*)lp;
-        if ((uint64_t)wp == currentReq_ && PopupWindow::shared().isVisible())
-            PopupWindow::shared().appendDelta(*delta);
-        delete delta;
+    case WM_APP_TR_DELTA:
+        // 工作线程只挂一条唤醒消息；有了节流定时器后，后续增量继续在缓冲里
+        // 累加，由定时器统一按帧刷新。
+        if ((uint64_t)wp != currentReq_ || !PopupWindow::shared().isVisible()) {
+            discardPendingDelta();
+            return 0;
+        }
+        if (!pacingStream_) {
+            pacingStream_ = true;
+            SetTimer(hwnd_, kDeltaTimerId, 33, nullptr);
+        }
         return 0;
-    }
+
+    case WM_TIMER:
+        if (wp == kDeltaTimerId) flushPendingDelta();
+        return 0;
 
     case WM_APP_TR_DONE: {
         auto* done = (DoneMsg*)lp;
-        if ((uint64_t)wp == currentReq_ && PopupWindow::shared().isVisible()) {
-            if (!done->ok)
-                PopupWindow::shared().setError(done->error);
-            else if (util::Trim(PopupWindow::shared().translation()).empty())
-                PopupWindow::shared().setError(L"No translation returned");
-            else
-                PopupWindow::shared().finishTranslation();
+        if (pacingStream_) {
+            pacingStream_ = false;
+            KillTimer(hwnd_, kDeltaTimerId);
+        }
+        if ((uint64_t)wp == currentReq_) {
+            flushPendingDelta();
+            if (PopupWindow::shared().isVisible()) {
+                if (!done->ok)
+                    PopupWindow::shared().setError(done->error);
+                else if (util::Trim(PopupWindow::shared().translation()).empty())
+                    PopupWindow::shared().setError(L"No translation returned");
+                else
+                    PopupWindow::shared().finishTranslation();
+            }
+        } else {
+            discardPendingDelta();
         }
         delete done;
         return 0;
@@ -532,8 +608,24 @@ LRESULT App::handle(UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
 
+    case WM_CLOSE:
+        // 升级/卸载时安装器（Restart Manager）用 WM_CLOSE 请求退出。
+        // 走和托盘"退出"完全相同的路径：取消翻译、摘钩子、然后 ExitProcess。
+        quit();
+        return 0;
+
     case WM_DESTROY:
         tray_.remove();
+        return 0;
+    }
+
+    // 钩子线程投递过来的鼠标/键盘事件：在主线程派发订阅者
+    if (msg == hooks::MouseMessage()) {
+        hooks::DispatchMouse(wp, lp);
+        return 0;
+    }
+    if (msg == hooks::KeyMessage()) {
+        hooks::DispatchKey(wp, lp);
         return 0;
     }
 

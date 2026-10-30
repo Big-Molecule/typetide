@@ -57,6 +57,7 @@ void PopupWindow::show(const std::wstring& original, Language target, RECT ancho
     scrollY_ = 0;
     target_ = target;
     source_.reset();
+    lastWidth_ = lastHeight_ = 0;
     onSourceChange = nullptr;
     anchor_ = anchor;
     showReplace_ = showReplace;
@@ -114,8 +115,10 @@ void PopupWindow::appendDelta(const std::wstring& delta) {
     translation_ += delta;
     loading_ = false;
     tidePhase_ = TidePhase::Flowing;
+    // 每帧只测量正文并决定是否需要调整窗口；如果宽高都没变，
+    // layoutAndResize 内部不会再调用 SetWindowPos。
     layoutAndResize();
-    InvalidateRect(hwnd_, nullptr, TRUE);
+    InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 void PopupWindow::finishTranslation() {
@@ -227,6 +230,12 @@ void PopupWindow::layoutAndResize() {
     const int btnGap = px(ui::spacing::Medium);
 
     int height = headerH + 1 + padY + textH + (hasButtons ? btnGap + btnH : 0) + padY;
+    // 流式过程中按固定档位向上取整，避免每换一行就调整一次窗口；
+    // 收尾时使用精确高度。
+    if (tidePhase_ == TidePhase::Flowing && height > lastHeight_) {
+        const int step = px(24);
+        height = ((height + step - 1) / step) * step;
+    }
 
     // 命中区域
     const int chipH = px(20);
@@ -277,7 +286,10 @@ void PopupWindow::layoutAndResize() {
     x = std::max((int)wa.left + px(8), std::min(x, (int)wa.right - width - px(8)));
     y = std::max((int)wa.top + px(8), std::min(y, (int)wa.bottom - height - px(8)));
 
-    SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
+    SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
+                 SWP_NOACTIVATE | (width == lastWidth_ && height == lastHeight_ ? SWP_NOSIZE : 0));
+    lastWidth_ = width;
+    lastHeight_ = height;
 }
 
 void PopupWindow::paint(HDC dc) {
@@ -492,10 +504,12 @@ void PopupWindow::showLangMenu(bool source) {
     // 保证 Replace 仍粘贴回目标应用。
     HWND prevFg = GetForegroundWindow();
     menuOpen_ = true;
+    swallowEscape_.store(false);
     SetForegroundWindow(hwnd_);
     UINT cmd = (UINT)TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTALIGN | TPM_TOPALIGN,
                                     at.x, at.y, 0, hwnd_, nullptr);
     menuOpen_ = false;
+    swallowEscape_.store(hwnd_ != nullptr);
     DestroyMenu(menu);
     if (prevFg && prevFg != hwnd_) SetForegroundWindow(prevFg);
 
@@ -515,6 +529,8 @@ void PopupWindow::installDismissMonitors() {
         GetWindowRect(hwnd_, &wr);
         if (!PtInRect(&wr, pt)) close();
     });
+    // Esc 必须在钩子线程上同步吞掉，否则会漏给目标应用；
+    // 关闭弹窗的动作由 KeyMessage 回到主线程执行。
     keyHookId_ = hooks::AddKey([this](DWORD vk) {
         if (vk == VK_ESCAPE && hwnd_ && !menuOpen_) {
             close();
@@ -522,11 +538,16 @@ void PopupWindow::installDismissMonitors() {
         }
         return false;
     });
+    swallowEscape_.store(hwnd_ != nullptr && keyHookId_ != 0);
+    if (keyHookId_) hooks::SetSwallowKey(VK_ESCAPE, keyHookId_, &swallowEscape_);
 }
 
 void PopupWindow::removeDismissMonitors() {
     if (mouseHookId_) hooks::RemoveMouse(mouseHookId_);
-    if (keyHookId_) hooks::RemoveKey(keyHookId_);
+    if (keyHookId_) {
+        hooks::SetSwallowKey(VK_ESCAPE, 0, nullptr);
+        hooks::RemoveKey(keyHookId_);
+    }
     mouseHookId_ = keyHookId_ = 0;
 }
 

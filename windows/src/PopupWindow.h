@@ -8,6 +8,7 @@
 #include <functional>
 #include <string>
 #include <optional>
+#include <atomic>
 
 class PopupWindow {
 public:
@@ -83,6 +84,8 @@ private:
     int textHeight_ = 0;
     int viewportHeight_ = 0;
     int scrollY_ = 0;
+    // 上一次实际应用到窗口的尺寸：尺寸没变就不再 SetWindowPos
+    int lastWidth_ = 0, lastHeight_ = 0;
 
     Region hover_ = Region::None;
     bool replacePressed_ = false;
@@ -93,4 +96,6 @@ private:
     HFONT fontHeader_ = nullptr, fontBody_ = nullptr, fontSmall_ = nullptr;
 
     int mouseHookId_ = 0, keyHookId_ = 0;
+    /// Esc 是否由钩子线程吞掉：弹窗可见且下拉菜单没开时为 true
+    std::atomic<bool> swallowEscape_{false};
 };

@@ -40,12 +40,6 @@ struct OpenAIProvider: TranslationProvider {
                     continuation.finish(throwing: TranslationError.notConfigured("Invalid base URL"))
                     return
                 }
-                guard url.scheme?.lowercased() == "https" || isLoopback(url.host) else {
-                    continuation.finish(throwing: TranslationError.notConfigured(
-                        "Refusing to send an API key over an insecure HTTP connection"))
-                    return
-                }
-
                 var req = URLRequest(url: url)
                 req.httpMethod = "POST"
                 req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -88,11 +82,6 @@ struct OpenAIProvider: TranslationProvider {
             continuation.onTermination = { _ in task.cancel() }
         }
     }
-}
-
-private func isLoopback(_ host: String?) -> Bool {
-    guard let host = host?.lowercased() else { return false }
-    return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
 }
 
 private func providerError(from body: String) -> String? {
